@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # EquiHire AI - Applicant Tracking System
 
 A production-ready ATS (Applicant Tracking System) with AI-powered resume screening, fairness auditing, and explainability features.
@@ -256,14 +255,3 @@ kubectl apply -f k8s/
 4. Add tests
 5. Submit a pull request
 
-## License
-
-[Your License Here]
-
-## Support
-
-For issues and questions, please open an issue on GitHub.
-
-=======
-# ATS-Resume-Screening-with-Hiring-Dashboard
->>>>>>> 6915d06c0e859bdc7d7419fdd709cac59553d903
