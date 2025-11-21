@@ -1,0 +1,35 @@
+database:
+  host: ${POSTGRES_HOST}
+  port: 5432
+  name: ${POSTGRES_DB}
+  user: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
+
+minio:
+  endpoint: ${MINIO_ENDPOINT}
+  access_key: ${MINIO_ACCESS_KEY}
+  secret_key: ${MINIO_SECRET_KEY}
+  bucket: resumes
+  secure: true
+
+services:
+  parser:
+    host: ${PARSER_SERVICE_HOST}
+    port: 5001
+  matcher:
+    host: ${MATCHER_SERVICE_HOST}
+    port: 5002
+  fairness:
+    host: ${FAIRNESS_SERVICE_HOST}
+    port: 5003
+  explainability:
+    host: ${EXPLAINABILITY_SERVICE_HOST}
+    port: 5004
+
+mlflow:
+  tracking_uri: ${MLFLOW_TRACKING_URI}
+
+logging:
+  level: WARNING
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+

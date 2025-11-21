@@ -1,0 +1,152 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Recruiter Dashboard - EquiHire AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-0"><i class="bi bi-speedometer2 me-2"></i>Recruiter Dashboard</h2>
+            <p class="text-muted">Overview of your hiring pipeline</p>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">Total Jobs</div>
+                        <div class="stat-value">{{ total_jobs }}</div>
+                    </div>
+                    <i class="bi bi-briefcase-fill" style="font-size: 2.5rem; color: var(--primary-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card success">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">Active Jobs</div>
+                        <div class="stat-value" style="color: var(--success-color);">{{ active_jobs }}</div>
+                    </div>
+                    <i class="bi bi-check-circle-fill" style="font-size: 2.5rem; color: var(--success-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card warning">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">Total Applications</div>
+                        <div class="stat-value" style="color: var(--warning-color);">{{ total_applications }}</div>
+                    </div>
+                    <i class="bi bi-file-earmark-text-fill" style="font-size: 2.5rem; color: var(--warning-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card info">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">Pending Review</div>
+                        <div class="stat-value" style="color: var(--info-color);">{{ pending_applications }}</div>
+                    </div>
+                    <i class="bi bi-clock-fill" style="font-size: 2.5rem; color: var(--info-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Recent Applications -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-people me-2"></i>Recent Applications</h5>
+                    <a href="{% url 'jobs:application-list' %}" class="btn btn-sm btn-light">View All</a>
+                </div>
+                <div class="card-body">
+                    {% if recent_applications %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Candidate</th>
+                                        <th>Job</th>
+                                        <th>Score</th>
+                                        <th>Status</th>
+                                        <th>Date</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for app in recent_applications %}
+                                    <tr>
+                                        <td>{{ app.resume.candidate.email }}</td>
+                                        <td>{{ app.job.title }}</td>
+                                        <td>
+                                            {% if app.score %}
+                                                <span class="score-badge {{ app.score|floatformat:2|cut:'0.'|length|yesno:'score-high,score-medium,score-low' }}">
+                                                    {{ app.score|floatformat:0 }}%
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">N/A</span>
+                                            {% endif %}
+                                        </td>
+                                        <td><span class="badge bg-{{ app.status|yesno:'success,warning,secondary' }}">{{ app.status|title }}</span></td>
+                                        <td>{{ app.created_at|date:"M d, Y" }}</td>
+                                        <td>
+                                            <a href="{% url 'jobs:application-detail' app.id %}" class="btn btn-sm btn-primary">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="empty-state">
+                            <i class="bi bi-inbox"></i>
+                            <p>No applications yet</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Jobs -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>Top Jobs</h5>
+                </div>
+                <div class="card-body">
+                    {% if top_jobs %}
+                        {% for job in top_jobs %}
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                            <div>
+                                <h6 class="mb-1">{{ job.title }}</h6>
+                                <small class="text-muted">{{ job.application_count }} applications</small>
+                            </div>
+                            <a href="{% url 'jobs:job-detail' job.id %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-arrow-right"></i>
+                            </a>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="empty-state">
+                            <i class="bi bi-briefcase"></i>
+                            <p>No jobs posted yet</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

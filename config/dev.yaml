@@ -1,0 +1,35 @@
+database:
+  host: postgres
+  port: 5432
+  name: equihire
+  user: admin
+  password: admin123
+
+minio:
+  endpoint: minio:9000
+  access_key: minioadmin
+  secret_key: minioadmin
+  bucket: resumes
+  secure: false
+
+services:
+  parser:
+    host: parser_service
+    port: 5001
+  matcher:
+    host: matcher_service
+    port: 5002
+  fairness:
+    host: fairness_service
+    port: 5003
+  explainability:
+    host: explainability_service
+    port: 5004
+
+mlflow:
+  tracking_uri: http://mlflow:5000
+
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+

@@ -1,0 +1,141 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Application Details - EquiHire AI{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h4 class="mb-0">Application Details</h4>
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <strong>Job Title:</strong>
+                            <p>{{ application.job.title }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Status:</strong>
+                            <p><span class="badge bg-{{ application.status|yesno:'success,warning,danger,secondary' }}">{{ application.status|title }}</span></p>
+                        </div>
+                    </div>
+                    
+                    {% if application.score %}
+                    <div class="mb-3">
+                        <strong>Match Score:</strong>
+                        <div class="mt-2">
+                            <span class="score-badge {{ application.score|floatformat:2|cut:'0.'|length|yesno:'score-high,score-medium,score-low' }}">
+                                {{ application.score|floatformat:0 }}%
+                            </span>
+                        </div>
+                        <div class="progress mt-2" style="height: 20px;">
+                            <div class="progress-bar" role="progressbar" style="width: {{ application.score|floatformat:0 }}%">
+                                {{ application.score|floatformat:0 }}%
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if user.is_recruiter %}
+                    <div class="mb-3">
+                        <strong>Candidate:</strong>
+                        <p>{{ application.resume.candidate.email }}</p>
+                    </div>
+                    {% endif %}
+                    
+                    {% if application.notes %}
+                    <div class="mb-3">
+                        <strong>Notes:</strong>
+                        <p>{{ application.notes }}</p>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        <strong>Applied:</strong>
+                        <p>{{ application.created_at|date:"F d, Y g:i A" }}</p>
+                    </div>
+                </div>
+            </div>
+            
+            {% if application.fairness_metrics %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Fairness Metrics</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% if application.fairness_metrics.disparate_impact_ratio %}
+                        <div class="col-md-6">
+                            <div class="fairness-metric">
+                                <div class="metric-label">Disparate Impact Ratio</div>
+                                <div class="metric-value">{{ application.fairness_metrics.disparate_impact_ratio|floatformat:2 }}</div>
+                                <span class="metric-status {{ application.fairness_metrics.is_fair|yesno:'fair,unfair' }}">
+                                    {{ application.fairness_metrics.is_fair|yesno:'Fair,Unfair' }}
+                                </span>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if application.explanation %}
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-lightbulb me-2"></i>Explanation</h5>
+                </div>
+                <div class="card-body">
+                    <p>{{ application.explanation.explanation|default:"No explanation available" }}</p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="col-lg-4">
+            {% if user.is_recruiter %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Actions</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'jobs:application-update' application.id %}">
+                        {% csrf_token %}
+                        <div class="mb-3">
+                            <label class="form-label">Update Status</label>
+                            <select name="status" class="form-select">
+                                <option value="pending" {% if application.status == 'pending' %}selected{% endif %}>Pending</option>
+                                <option value="reviewing" {% if application.status == 'reviewing' %}selected{% endif %}>Reviewing</option>
+                                <option value="shortlisted" {% if application.status == 'shortlisted' %}selected{% endif %}>Shortlisted</option>
+                                <option value="rejected" {% if application.status == 'rejected' %}selected{% endif %}>Rejected</option>
+                                <option value="hired" {% if application.status == 'hired' %}selected{% endif %}>Hired</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Notes</label>
+                            <textarea name="notes" class="form-control" rows="3">{{ application.notes|default:"" }}</textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Update Application</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+            
+            <div class="card">
+                <div class="card-body">
+                    <a href="{% url 'jobs:job-detail' application.job.id %}" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="bi bi-briefcase me-2"></i>View Job
+                    </a>
+                    <a href="{% url 'jobs:application-list' %}" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-arrow-left me-2"></i>Back to List
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

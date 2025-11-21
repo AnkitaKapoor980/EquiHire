@@ -1,0 +1,57 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Upload Resume - EquiHire AI{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h4 class="mb-0"><i class="bi bi-upload me-2"></i>Upload Resume</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        Supported formats: PDF, DOCX (Max size: 10MB)
+                    </div>
+                    
+                    <form method="post" enctype="multipart/form-data" id="uploadForm">
+                        {% csrf_token %}
+                        <div class="mb-4">
+                            <label class="form-label">Select Resume File *</label>
+                            <input type="file" class="form-control" name="file" accept=".pdf,.docx" required>
+                            <div class="form-text">The system will automatically parse and extract information from your resume.</div>
+                        </div>
+                        
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-upload me-2"></i>Upload & Parse
+                            </button>
+                            <a href="{% url 'candidates:resume-list' %}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </form>
+                    
+                    <div id="uploadProgress" class="mt-4" style="display: none;">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%">
+                                Processing resume...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('uploadForm').addEventListener('submit', function() {
+    document.getElementById('uploadProgress').style.display = 'block';
+});
+</script>
+{% endblock %}
+

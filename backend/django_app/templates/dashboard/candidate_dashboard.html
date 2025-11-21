@@ -1,0 +1,188 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Candidate Dashboard - EquiHire AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-0"><i class="bi bi-speedometer2 me-2"></i>My Dashboard</h2>
+            <p class="text-muted">Track your job applications and profile</p>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">My Resumes</div>
+                        <div class="stat-value">{{ total_resumes }}</div>
+                    </div>
+                    <i class="bi bi-file-earmark-text-fill" style="font-size: 2.5rem; color: var(--primary-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card success">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">Applications</div>
+                        <div class="stat-value" style="color: var(--success-color);">{{ total_applications }}</div>
+                    </div>
+                    <i class="bi bi-send-fill" style="font-size: 2.5rem; color: var(--success-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card warning">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">Pending</div>
+                        <div class="stat-value" style="color: var(--warning-color);">{{ pending_applications }}</div>
+                    </div>
+                    <i class="bi bi-clock-fill" style="font-size: 2.5rem; color: var(--warning-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card info">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="stat-label">Shortlisted</div>
+                        <div class="stat-value" style="color: var(--info-color);">{{ shortlisted_applications }}</div>
+                    </div>
+                    <i class="bi bi-star-fill" style="font-size: 2.5rem; color: var(--info-color); opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Recent Applications -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>My Applications</h5>
+                    <a href="{% url 'jobs:application-list' %}" class="btn btn-sm btn-light">View All</a>
+                </div>
+                <div class="card-body">
+                    {% if recent_applications %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Job Title</th>
+                                        <th>Score</th>
+                                        <th>Status</th>
+                                        <th>Applied</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for app in recent_applications %}
+                                    <tr>
+                                        <td><strong>{{ app.job.title }}</strong></td>
+                                        <td>
+                                            {% if app.score %}
+                                                <span class="score-badge {{ app.score|floatformat:2|cut:'0.'|length|yesno:'score-high,score-medium,score-low' }}">
+                                                    {{ app.score|floatformat:0 }}%
+                                                </span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">Processing</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-{{ app.status|yesno:'success,warning,danger,secondary' }}">
+                                                {{ app.status|title }}
+                                            </span>
+                                        </td>
+                                        <td>{{ app.created_at|date:"M d, Y" }}</td>
+                                        <td>
+                                            <a href="{% url 'jobs:application-detail' app.id %}" class="btn btn-sm btn-primary">
+                                                <i class="bi bi-eye"></i> View
+                                            </a>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="empty-state">
+                            <i class="bi bi-inbox"></i>
+                            <p>No applications yet. <a href="{% url 'jobs:job-list' %}">Browse jobs</a> to get started!</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="col-lg-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-lightning-fill me-2"></i>Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'candidates:resume-list' %}" class="btn btn-primary w-100 mb-2">
+                        <i class="bi bi-upload me-2"></i>Upload Resume
+                    </a>
+                    <a href="{% url 'jobs:job-list' %}" class="btn btn-outline-primary w-100 mb-2">
+                        <i class="bi bi-search me-2"></i>Browse Jobs
+                    </a>
+                    <a href="{% url 'accounts:profile' %}" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-person me-2"></i>Edit Profile
+                    </a>
+                </div>
+            </div>
+
+            <!-- Application Status Chart -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>Status Overview</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="statusChart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const statusData = {
+    pending: {{ pending_applications }},
+    shortlisted: {{ shortlisted_applications }},
+    rejected: {{ rejected_applications }},
+    total: {{ total_applications }}
+};
+
+const ctx = document.getElementById('statusChart');
+if (ctx && statusData.total > 0) {
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Pending', 'Shortlisted', 'Rejected'],
+            datasets: [{
+                data: [statusData.pending, statusData.shortlisted, statusData.rejected],
+                backgroundColor: [
+                    'rgba(255, 193, 7, 0.8)',
+                    'rgba(13, 202, 240, 0.8)',
+                    'rgba(220, 53, 69, 0.8)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false
+        }
+    });
+}
+</script>
+{% endblock %}
+
