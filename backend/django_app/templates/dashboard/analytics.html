@@ -1,0 +1,143 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Analytics - EquiHire AI{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col">
+            <h2><i class="bi bi-graph-up me-2"></i>Analytics Dashboard</h2>
+            <p class="text-muted">Track your recruitment metrics and insights</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0">Applications Over Time (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    {% if applications_over_time %}
+                        <canvas id="applicationsChart"></canvas>
+                    {% else %}
+                        <p class="text-muted">No data available yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0">Status Distribution</h5>
+                </div>
+                <div class="card-body">
+                    {% if status_distribution %}
+                        <canvas id="statusChart"></canvas>
+                    {% else %}
+                        <p class="text-muted">No data available yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0">Top Skills in Applications</h5>
+                </div>
+                <div class="card-body">
+                    {% if top_skills %}
+                        <ul class="list-group">
+                            {% for skill in top_skills %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    {{ skill.skills|default:"N/A" }}
+                                    <span class="badge bg-primary rounded-pill">{{ skill.count }}</span>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="text-muted">No skills data available yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Applications over time chart
+    {% if applications_over_time %}
+    const appsCtx = document.getElementById('applicationsChart');
+    if (appsCtx) {
+        const appsData = {{ applications_over_time|safe }};
+        const labels = appsData.map(item => item.day);
+        const counts = appsData.map(item => item.count);
+        
+        new Chart(appsCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Applications',
+                    data: counts,
+                    borderColor: 'rgb(75, 192, 192)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    tension: 0.1,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+    {% endif %}
+
+    // Status distribution chart
+    {% if status_distribution %}
+    const statusCtx = document.getElementById('statusChart');
+    if (statusCtx) {
+        const statusData = {{ status_distribution|safe }};
+        const labels = statusData.map(item => item.status.charAt(0).toUpperCase() + item.status.slice(1));
+        const counts = statusData.map(item => item.count);
+        
+        new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: counts,
+                    backgroundColor: [
+                        'rgb(255, 99, 132)',
+                        'rgb(54, 162, 235)',
+                        'rgb(255, 205, 86)',
+                        'rgb(75, 192, 192)',
+                        'rgb(153, 102, 255)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true
+            }
+        });
+    }
+    {% endif %}
+</script>
+{% endblock %}
+

@@ -15,7 +15,7 @@ requests==2.31.0
 # NLP/ML
 PyMuPDF>=1.26.6
 python-docx==1.1.0
-spacy>=3.8.11
+# spaCy removed - parser service now uses lightweight regex-based extraction
 sentence-transformers==2.2.2
 scikit-learn==1.3.2
 numpy>=1.24.3,<2.0

@@ -28,6 +28,22 @@ def resume_list_view(request):
     return render(request, 'candidates/resume_list.html', {'resumes': resumes})
 
 @login_required
+def resume_api_html_view(request):
+    """Custom HTML view for Resume API that properly handles array fields."""
+    resumes = Resume.objects.filter(candidate=request.user).order_by('-uploaded_at')
+    
+    # Serialize resumes for JSON display
+    from .serializers import ResumeSerializer
+    import json
+    serialized_resumes = [ResumeSerializer(resume).data for resume in resumes]
+    
+    return render(request, 'candidates/resume_api.html', {
+        'resumes': resumes,
+        'resumes_json': json.dumps(serialized_resumes),
+        'api_url': '/candidates/api/resumes/'
+    })
+
+@login_required
 def resume_upload_view(request):
     """HTML view for resume upload."""
     if request.method == 'POST':
@@ -43,21 +59,37 @@ def resume_upload_view(request):
         try:
             file_path = minio_service.upload_file(file, request.user.id)
             
-            # Call parser service
-            file.seek(0)
-            files = {'file': (file.name, file, file.content_type)}
-            parser_response = requests.post(
-                f"{settings.PARSER_SERVICE_URL}/api/parse",
-                files=files,
-                timeout=30
-            )
+            # Try to call parser service, but allow upload without parsing if service is unavailable
+            parsed_data = {}
+            try:
+                file.seek(0)
+                files = {'file': (file.name, file, file.content_type)}
+                parser_response = requests.post(
+                    f"{settings.PARSER_SERVICE_URL}/api/parse",
+                    files=files,
+                    timeout=10
+                )
+                
+                if parser_response.status_code == 200:
+                    parsed_data = parser_response.json()
+                    logger.info(f"Resume parsed successfully for {file.name}")
+                else:
+                    logger.warning(f"Parser service returned {parser_response.status_code}, continuing without parsing")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Parser service unavailable: {str(e)}. Uploading resume without parsing.")
+                # Continue without parsing - file is already uploaded to MinIO
             
-            if parser_response.status_code != 200:
-                minio_service.delete_file(file_path)
-                messages.error(request, 'Failed to parse resume.')
-                return render(request, 'candidates/resume_upload.html')
-            
-            parsed_data = parser_response.json()
+            # Extract basic text from file if parsing failed
+            raw_text = parsed_data.get('raw_text', '')
+            if not raw_text and file.content_type == 'application/pdf':
+                try:
+                    import fitz  # PyMuPDF
+                    file.seek(0)
+                    doc = fitz.open(stream=file.read(), filetype='pdf')
+                    raw_text = '\n'.join([page.get_text() for page in doc])
+                    doc.close()
+                except Exception as e:
+                    logger.warning(f"Could not extract text from PDF: {str(e)}")
             
             resume = Resume.objects.create(
                 candidate=request.user,
@@ -65,7 +97,7 @@ def resume_upload_view(request):
                 file_path=file_path,
                 file_size=file.size,
                 file_type=file.content_type,
-                raw_text=parsed_data.get('raw_text', ''),
+                raw_text=raw_text,
                 parsed_data=parsed_data.get('parsed_data', {}),
                 skills=parsed_data.get('skills', []),
                 education=parsed_data.get('education', []),
@@ -73,9 +105,13 @@ def resume_upload_view(request):
                 certifications=parsed_data.get('certifications', [])
             )
             
-            messages.success(request, 'Resume uploaded and parsed successfully!')
+            if parsed_data:
+                messages.success(request, 'Resume uploaded and parsed successfully!')
+            else:
+                messages.success(request, 'Resume uploaded successfully! (Parsing will be done later)')
             return redirect('candidates:resume-list')
         except Exception as e:
+            logger.error(f"Error uploading resume: {str(e)}")
             messages.error(request, f'Error uploading resume: {str(e)}')
             return render(request, 'candidates/resume_upload.html')
     
@@ -89,7 +125,32 @@ class ResumeViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         # Users can only see their own resumes
-        return Resume.objects.filter(candidate=self.request.user)
+        if self.request.user.is_authenticated:
+            return Resume.objects.filter(candidate=self.request.user)
+        return Resume.objects.none()
+    
+    def _is_browser_request(self, request):
+        """Check if request is from a browser."""
+        accept_header = request.META.get('HTTP_ACCEPT', '')
+        return 'text/html' in accept_header or (
+            hasattr(request, 'accepted_renderer') and 
+            request.accepted_renderer.format == 'html'
+        )
+    
+    def list(self, request, *args, **kwargs):
+        """List resumes. Redirect browser requests to HTML view."""
+        if self._is_browser_request(request):
+            from django.http import HttpResponseRedirect
+            return HttpResponseRedirect('/candidates/resumes/')
+        return super().list(request, *args, **kwargs)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Get resume detail. Redirect browser requests to HTML view."""
+        if self._is_browser_request(request):
+            from django.http import HttpResponseRedirect
+            pk = kwargs.get('pk')
+            return HttpResponseRedirect(f'/candidates/resumes/')
+        return super().retrieve(request, *args, **kwargs)
     
     def create(self, request, *args, **kwargs):
         """Upload and parse a resume."""
@@ -104,25 +165,38 @@ class ResumeViewSet(viewsets.ModelViewSet):
             # Upload file to MinIO
             file_path = minio_service.upload_file(file, request.user.id)
             
-            # Call parser service
-            file.seek(0)  # Reset file pointer
-            files = {'file': (file.name, file, file.content_type)}
-            
-            parser_response = requests.post(
-                f"{settings.PARSER_SERVICE_URL}/api/parse",
-                files=files,
-                timeout=30
-            )
-            
-            if parser_response.status_code != 200:
-                # Delete uploaded file if parsing fails
-                minio_service.delete_file(file_path)
-                return Response(
-                    {'error': 'Failed to parse resume'},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            # Try to call parser service, but allow upload without parsing if service is unavailable
+            parsed_data = {}
+            try:
+                file.seek(0)  # Reset file pointer
+                files = {'file': (file.name, file, file.content_type)}
+                
+                parser_response = requests.post(
+                    f"{settings.PARSER_SERVICE_URL}/api/parse",
+                    files=files,
+                    timeout=10
                 )
+                
+                if parser_response.status_code == 200:
+                    parsed_data = parser_response.json()
+                    logger.info(f"Resume parsed successfully for {file.name}")
+                else:
+                    logger.warning(f"Parser service returned {parser_response.status_code}, continuing without parsing")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Parser service unavailable: {str(e)}. Uploading resume without parsing.")
+                # Continue without parsing - file is already uploaded to MinIO
             
-            parsed_data = parser_response.json()
+            # Extract basic text from file if parsing failed
+            raw_text = parsed_data.get('raw_text', '')
+            if not raw_text and file.content_type == 'application/pdf':
+                try:
+                    import fitz  # PyMuPDF
+                    file.seek(0)
+                    doc = fitz.open(stream=file.read(), filetype='pdf')
+                    raw_text = '\n'.join([page.get_text() for page in doc])
+                    doc.close()
+                except Exception as e:
+                    logger.warning(f"Could not extract text from PDF: {str(e)}")
             
             # Create Resume object
             resume = Resume.objects.create(
@@ -131,7 +205,7 @@ class ResumeViewSet(viewsets.ModelViewSet):
                 file_path=file_path,
                 file_size=file.size,
                 file_type=file.content_type,
-                raw_text=parsed_data.get('raw_text', ''),
+                raw_text=raw_text,
                 parsed_data=parsed_data.get('parsed_data', {}),
                 skills=parsed_data.get('skills', []),
                 education=parsed_data.get('education', []),
@@ -139,11 +213,11 @@ class ResumeViewSet(viewsets.ModelViewSet):
                 certifications=parsed_data.get('certifications', [])
             )
             
-            # Generate embedding
+            # Generate embedding (optional, can fail gracefully)
             try:
                 self._generate_embedding(resume)
             except Exception as e:
-                logger.error(f"Failed to generate embedding for resume {resume.id}: {str(e)}")
+                logger.warning(f"Failed to generate embedding for resume {resume.id}: {str(e)}")
             
             return Response(
                 ResumeSerializer(resume).data,

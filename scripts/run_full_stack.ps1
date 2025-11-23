@@ -59,7 +59,7 @@ Pop-Location
 if (-not $SkipDataLoad) {
     if (Test-Path "$repoRoot\data\load_data.py") {
         Write-Host "📥 Loading sample datasets (data/load_data.py) ..." -ForegroundColor Yellow
-        & $PythonCmd data/load_data.py
+        & $PythonCmd "$repoRoot\data\load_data.py"
     } else {
         Write-Host "⚠️  data/load_data.py not found, skipping sample data load." -ForegroundColor Yellow
     }

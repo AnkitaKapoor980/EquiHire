@@ -1,0 +1,501 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Resume API - EquiHire AI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .resume-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: #fff;
+    }
+    .resume-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .array-field {
+        margin-bottom: 1rem;
+    }
+    .array-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .array-item input {
+        flex: 1;
+    }
+    .array-item .btn-remove {
+        color: #dc3545;
+        border: none;
+        background: none;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+    }
+    .array-item .btn-remove:hover {
+        color: #c82333;
+    }
+    .btn-add-item {
+        margin-top: 0.5rem;
+    }
+    .json-viewer {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 1rem;
+        max-height: 400px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+    .form-section {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+    .response-message {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: 4px;
+        display: none;
+    }
+    .response-message.success {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+    .response-message.error {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+    }
+    .skill-tag, .education-tag, .cert-tag {
+        display: inline-block;
+        background: #e9ecef;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        margin: 0.25rem;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-0"><i class="bi bi-code-square me-2"></i>Resume API Interface</h2>
+            <p class="text-muted">Manage resumes via API with proper array field support</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- API Form Section -->
+        <div class="col-lg-6">
+            <div class="form-section">
+                <h4 class="mb-3"><i class="bi bi-plus-circle me-2"></i>Create New Resume</h4>
+                
+                <form id="resumeForm" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="file" class="form-label">File *</label>
+                        <input type="file" class="form-control" id="file" name="file" accept=".pdf,.docx" required>
+                        <div class="form-text">PDF or DOCX file (Max 10MB)</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">File Name</label>
+                        <input type="text" class="form-control" id="file_name" name="file_name" placeholder="Auto-filled from file">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Raw Text</label>
+                        <textarea class="form-control" id="raw_text" name="raw_text" rows="3" placeholder="Extracted text from resume"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Experience Years</label>
+                        <input type="number" class="form-control" id="experience_years" name="experience_years" min="0" placeholder="Years of experience">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Is Active</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active" checked>
+                            <label class="form-check-label" for="is_active">Active</label>
+                        </div>
+                    </div>
+
+                    <!-- Skills Array Field -->
+                    <div class="array-field mb-3">
+                        <label class="form-label">Skills</label>
+                        <div id="skills-container">
+                            <div class="array-item">
+                                <input type="text" class="form-control skill-input" placeholder="Enter a skill">
+                                <button type="button" class="btn btn-sm btn-remove" onclick="removeArrayItem(this)">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary btn-add-item" onclick="addArrayItem('skills-container', 'skill-input')">
+                            <i class="bi bi-plus"></i> Add Skill
+                        </button>
+                    </div>
+
+                    <!-- Education Array Field -->
+                    <div class="array-field mb-3">
+                        <label class="form-label">Education</label>
+                        <div id="education-container">
+                            <div class="array-item">
+                                <input type="text" class="form-control education-input" placeholder="Enter education">
+                                <button type="button" class="btn btn-sm btn-remove" onclick="removeArrayItem(this)">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary btn-add-item" onclick="addArrayItem('education-container', 'education-input')">
+                            <i class="bi bi-plus"></i> Add Education
+                        </button>
+                    </div>
+
+                    <!-- Certifications Array Field -->
+                    <div class="array-field mb-3">
+                        <label class="form-label">Certifications</label>
+                        <div id="certifications-container">
+                            <div class="array-item">
+                                <input type="text" class="form-control cert-input" placeholder="Enter certification">
+                                <button type="button" class="btn btn-sm btn-remove" onclick="removeArrayItem(this)">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary btn-add-item" onclick="addArrayItem('certifications-container', 'cert-input')">
+                            <i class="bi bi-plus"></i> Add Certification
+                        </button>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload me-2"></i>Create Resume
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+                        </button>
+                    </div>
+                </form>
+
+                <div id="responseMessage" class="response-message"></div>
+            </div>
+        </div>
+
+        <!-- Resume List Section -->
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0"><i class="bi bi-list-ul me-2"></i>Resume List</h4>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshResumeList()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                </button>
+            </div>
+
+            <div id="resumeList">
+                {% for resume in resumes %}
+                <div class="resume-card" data-resume-id="{{ resume.id }}">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-earmark-text me-2"></i>{{ resume.file_name }}
+                        </h5>
+                        <span class="badge bg-{{ resume.is_active|yesno:'success,secondary' }}">
+                            {{ resume.is_active|yesno:'Active,Inactive' }}
+                        </span>
+                    </div>
+                    
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-calendar me-1"></i>Uploaded: {{ resume.uploaded_at|date:"M d, Y H:i" }}
+                    </p>
+                    
+                    {% if resume.skills %}
+                    <div class="mb-2">
+                        <strong>Skills:</strong>
+                        {% for skill in resume.skills %}
+                        <span class="skill-tag">{{ skill }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    {% if resume.education %}
+                    <div class="mb-2">
+                        <strong>Education:</strong>
+                        {% for edu in resume.education %}
+                        <span class="education-tag">{{ edu }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    {% if resume.certifications %}
+                    <div class="mb-2">
+                        <strong>Certifications:</strong>
+                        {% for cert in resume.certifications %}
+                        <span class="cert-tag">{{ cert }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    {% if resume.experience_years %}
+                    <div class="mb-2">
+                        <strong>Experience:</strong> {{ resume.experience_years }} years
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-info" onclick="viewResumeJSON({{ resume.id }})">
+                            <i class="bi bi-code me-1"></i>View JSON
+                        </button>
+                        <a href="{% url 'candidates:resume-download' resume.id %}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-download me-1"></i>Download
+                        </a>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>No resumes found. Create one using the form on the left.
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- JSON Viewer Modal -->
+            <div class="modal fade" id="jsonModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Resume JSON Data</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <pre id="jsonContent" class="json-viewer"></pre>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const API_URL = '{{ api_url }}';
+const resumesData = {{ resumes_json|safe }};
+
+// Array field management
+function addArrayItem(containerId, inputClass) {
+    const container = document.getElementById(containerId);
+    const newItem = document.createElement('div');
+    newItem.className = 'array-item';
+    newItem.innerHTML = `
+        <input type="text" class="form-control ${inputClass}" placeholder="Enter item">
+        <button type="button" class="btn btn-sm btn-remove" onclick="removeArrayItem(this)">
+            <i class="bi bi-x-circle"></i>
+        </button>
+    `;
+    container.appendChild(newItem);
+}
+
+function removeArrayItem(button) {
+    const container = button.closest('.array-field').querySelector('[id$="-container"]');
+    if (container.children.length > 1) {
+        button.closest('.array-item').remove();
+    }
+}
+
+function getArrayValues(containerId) {
+    const container = document.getElementById(containerId);
+    const inputs = container.querySelectorAll('input');
+    const values = Array.from(inputs)
+        .map(input => input.value.trim())
+        .filter(value => value !== '');
+    return values;
+}
+
+function resetForm() {
+    document.getElementById('resumeForm').reset();
+    // Reset array fields to single empty item
+    ['skills-container', 'education-container', 'certifications-container'].forEach(containerId => {
+        const container = document.getElementById(containerId);
+        while (container.children.length > 1) {
+            container.removeChild(container.lastChild);
+        }
+        if (container.children.length > 0) {
+            container.children[0].querySelector('input').value = '';
+        }
+    });
+    document.getElementById('responseMessage').style.display = 'none';
+}
+
+// Form submission
+document.getElementById('resumeForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData();
+    const fileInput = document.getElementById('file');
+    
+    if (fileInput.files.length > 0) {
+        formData.append('file', fileInput.files[0]);
+    }
+    
+    // Get array values
+    const skills = getArrayValues('skills-container');
+    const education = getArrayValues('education-container');
+    const certifications = getArrayValues('certifications-container');
+    
+    // Note: Array fields will be populated from parsed data after upload
+    // For manual entry, we'd need to send them as JSON or handle differently
+    
+    const responseMessage = document.getElementById('responseMessage');
+    responseMessage.style.display = 'none';
+    
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            responseMessage.className = 'response-message success';
+            responseMessage.innerHTML = `<i class="bi bi-check-circle me-2"></i>Resume created successfully!<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            responseMessage.style.display = 'block';
+            resetForm();
+            setTimeout(() => refreshResumeList(), 1000);
+        } else {
+            responseMessage.className = 'response-message error';
+            responseMessage.innerHTML = `<i class="bi bi-exclamation-circle me-2"></i>Error: ${JSON.stringify(data, null, 2)}`;
+            responseMessage.style.display = 'block';
+        }
+    } catch (error) {
+        responseMessage.className = 'response-message error';
+        responseMessage.innerHTML = `<i class="bi bi-exclamation-circle me-2"></i>Error: ${error.message}`;
+        responseMessage.style.display = 'block';
+    }
+});
+
+// Auto-fill file name from file input
+document.getElementById('file').addEventListener('change', function(e) {
+    if (e.target.files.length > 0) {
+        document.getElementById('file_name').value = e.target.files[0].name;
+    }
+});
+
+// View resume JSON
+function viewResumeJSON(resumeId) {
+    const resume = resumesData.find(r => r.id === resumeId);
+    if (resume) {
+        document.getElementById('jsonContent').textContent = JSON.stringify(resume, null, 2);
+        const modal = new bootstrap.Modal(document.getElementById('jsonModal'));
+        modal.show();
+    } else {
+        // Fetch from API if not in local data
+        fetch(`${API_URL}${resumeId}/`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('jsonContent').textContent = JSON.stringify(data, null, 2);
+                const modal = new bootstrap.Modal(document.getElementById('jsonModal'));
+                modal.show();
+            })
+            .catch(error => {
+                alert('Error fetching resume data: ' + error.message);
+            });
+    }
+}
+
+// Refresh resume list
+async function refreshResumeList() {
+    try {
+        const response = await fetch(API_URL);
+        const data = await response.json();
+        
+        const listContainer = document.getElementById('resumeList');
+        if (data.results && data.results.length > 0) {
+            listContainer.innerHTML = data.results.map(resume => `
+                <div class="resume-card" data-resume-id="${resume.id}">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-earmark-text me-2"></i>${resume.file_name}
+                        </h5>
+                        <span class="badge bg-${resume.is_active ? 'success' : 'secondary'}">
+                            ${resume.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                    </div>
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-calendar me-1"></i>Uploaded: ${new Date(resume.uploaded_at).toLocaleString()}
+                    </p>
+                    ${resume.skills && resume.skills.length > 0 ? `
+                        <div class="mb-2">
+                            <strong>Skills:</strong>
+                            ${resume.skills.map(skill => `<span class="skill-tag">${skill}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${resume.education && resume.education.length > 0 ? `
+                        <div class="mb-2">
+                            <strong>Education:</strong>
+                            ${resume.education.map(edu => `<span class="education-tag">${edu}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${resume.certifications && resume.certifications.length > 0 ? `
+                        <div class="mb-2">
+                            <strong>Certifications:</strong>
+                            ${resume.certifications.map(cert => `<span class="cert-tag">${cert}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${resume.experience_years ? `
+                        <div class="mb-2">
+                            <strong>Experience:</strong> ${resume.experience_years} years
+                        </div>
+                    ` : ''}
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-info" onclick="viewResumeJSON(${resume.id})">
+                            <i class="bi bi-code me-1"></i>View JSON
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            listContainer.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>No resumes found.
+                </div>
+            `;
+        }
+    } catch (error) {
+        alert('Error refreshing resume list: ' + error.message);
+    }
+}
+
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}
+

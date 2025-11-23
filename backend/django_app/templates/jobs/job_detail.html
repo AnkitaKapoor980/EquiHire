@@ -47,7 +47,7 @@
         <div class="col-lg-4">
             <div class="card mb-4">
                 <div class="card-body">
-                    {% if user.is_recruiter and job.posted_by == user %}
+                    {% if user.is_authenticated and user.is_recruiter and job.posted_by.id == user.id %}
                         <h5>Job Management</h5>
                         <p class="text-muted">Posted by you</p>
                         <a href="{% url 'jobs:application-list' %}?job={{ job.id }}" class="btn btn-primary w-100 mb-2">
@@ -56,7 +56,7 @@
                         <button class="btn btn-outline-primary w-100" onclick="matchCandidates({{ job.id }})">
                             <i class="bi bi-search me-2"></i>Match Candidates
                         </button>
-                    {% elif user.is_candidate %}
+                    {% elif user.is_authenticated and user.is_candidate %}
                         {% if has_applied %}
                             <div class="alert alert-info">
                                 <i class="bi bi-check-circle me-2"></i>You have already applied for this job
@@ -83,6 +83,10 @@
                                 </button>
                             </form>
                         {% endif %}
+                    {% else %}
+                        <div class="alert alert-warning">
+                            <i class="bi bi-info-circle me-2"></i>Please <a href="{% url 'accounts:login' %}">login</a> or <a href="{% url 'accounts:register' %}">register</a> to apply for this job.
+                        </div>
                     {% endif %}
                 </div>
             </div>

@@ -1,6 +1,7 @@
 """
 Flask Parser Service for resume parsing.
-Extracts text from PDF/DOCX and uses spaCy for entity extraction.
+Extracts text from PDF/DOCX using lightweight regex-based entity extraction.
+Optimized to work without heavy ML models like spaCy.
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -9,7 +10,6 @@ import os
 from werkzeug.utils import secure_filename
 import fitz  # PyMuPDF
 from docx import Document
-import spacy
 import re
 from datetime import datetime
 
@@ -22,14 +22,6 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
-
-# Load spaCy model
-try:
-    nlp = spacy.load("en_core_web_sm")
-    logger.info("spaCy model loaded successfully")
-except OSError:
-    logger.warning("spaCy model not found. Please download: python -m spacy download en_core_web_sm")
-    nlp = None
 
 # Allowed file extensions
 ALLOWED_EXTENSIONS = {'pdf', 'docx'}
@@ -79,52 +71,64 @@ def clean_text(text):
 
 
 def extract_entities(text):
-    """Extract entities using spaCy NER."""
-    if not nlp:
-        return {
-            'skills': [],
-            'education': [],
-            'organizations': [],
-            'locations': []
-        }
+    """Extract entities using lightweight regex-based patterns (no spaCy required)."""
+    text_lower = text.lower()
     
-    doc = nlp(text)
-    
-    # Extract skills (common technical terms)
+    # Extract skills (common technical terms) - regex-based
     skills_keywords = [
         'python', 'java', 'javascript', 'react', 'angular', 'vue', 'node',
         'sql', 'postgresql', 'mysql', 'mongodb', 'redis',
         'docker', 'kubernetes', 'aws', 'azure', 'gcp',
         'machine learning', 'deep learning', 'ai', 'nlp',
-        'git', 'ci/cd', 'agile', 'scrum'
+        'git', 'ci/cd', 'agile', 'scrum', 'typescript', 'html', 'css',
+        'spring', 'django', 'flask', 'express', 'tensorflow', 'pytorch'
     ]
     skills = []
-    text_lower = text.lower()
     for keyword in skills_keywords:
         if keyword in text_lower:
             skills.append(keyword.title())
     
-    # Extract education entities
+    # Extract education entities - regex-based
     education = []
-    education_keywords = ['university', 'college', 'bachelor', 'master', 'phd', 'degree', 'diploma']
-    for ent in doc.ents:
-        if ent.label_ in ['ORG', 'PERSON']:
-            for keyword in education_keywords:
-                if keyword in ent.text.lower():
-                    education.append(ent.text)
-                    break
+    education_patterns = [
+        r'\b(?:Bachelor|Master|PhD|Ph\.D\.|B\.S\.|B\.A\.|M\.S\.|M\.A\.)\b[^\n]*',
+        r'\b(?:University|College|Institute|School)\s+of\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b',
+        r'\b[A-Z][a-z]+\s+(?:University|College|Institute)\b',
+        r'\b(?:Bachelor|Master|PhD)\s+(?:of|in)\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b'
+    ]
+    for pattern in education_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        education.extend(matches)
     
-    # Extract organizations
-    organizations = [ent.text for ent in doc.ents if ent.label_ == 'ORG']
+    # Extract organizations - regex-based (company names, institutions)
+    organizations = []
+    # Pattern for common company indicators
+    org_patterns = [
+        r'\b(?:Inc\.|LLC|Ltd\.|Corp\.|Corporation|Company|Co\.)\b',
+        r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+(?:Technologies|Systems|Solutions|Services|Group|Industries)\b',
+        r'\b(?:Worked at|Employed at|Company:|Organization:)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b'
+    ]
+    for pattern in org_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        organizations.extend(matches)
     
-    # Extract locations
-    locations = [ent.text for ent in doc.ents if ent.label_ == 'GPE']
+    # Extract locations - regex-based (cities, states, countries)
+    locations = []
+    # Common location patterns
+    location_patterns = [
+        r'\b(?:New York|Los Angeles|Chicago|Houston|Phoenix|Philadelphia|San Antonio|San Diego|Dallas|San Jose|Austin|Jacksonville|San Francisco|Indianapolis|Columbus|Fort Worth|Charlotte|Seattle|Denver|Washington|Boston|El Paso|Detroit|Nashville|Memphis|Portland|Oklahoma City|Las Vegas|Louisville|Baltimore|Milwaukee|Albuquerque|Tucson|Fresno|Sacramento|Kansas City|Mesa|Atlanta|Omaha|Colorado Springs|Raleigh|Miami|Long Beach|Virginia Beach|Oakland|Minneapolis|Tulsa|Tampa|Arlington|New Orleans)\b',
+        r'\b(?:CA|NY|TX|FL|IL|PA|OH|GA|NC|MI|NJ|VA|WA|AZ|MA|TN|IN|MO|MD|WI|CO|MN|SC|AL|LA|KY|OR|OK|CT|IA|AR|UT|NV|MS|KS|NM|NE|WV|ID|HI|NH|ME|RI|MT|DE|SD|ND|AK|VT|WY|DC)\b',  # US States
+        r'\b(?:USA|United States|UK|United Kingdom|Canada|India|China|Germany|France|Australia|Japan|Brazil|Mexico)\b'  # Countries
+    ]
+    for pattern in location_patterns:
+        matches = re.findall(pattern, text, re.IGNORECASE)
+        locations.extend(matches)
     
     return {
         'skills': list(set(skills)),
-        'education': list(set(education)),
+        'education': list(set(education[:10])),  # Limit to top 10
         'organizations': list(set(organizations[:10])),  # Limit to top 10
-        'locations': list(set(locations[:10]))
+        'locations': list(set(locations[:10]))  # Limit to top 10
     }
 
 
@@ -174,7 +178,7 @@ def health():
     return jsonify({
         'status': 'healthy',
         'service': 'parser_service',
-        'spacy_loaded': nlp is not None
+        'extraction_method': 'regex-based (lightweight, no ML models)'
     })
 
 

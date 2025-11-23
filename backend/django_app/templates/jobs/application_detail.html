@@ -39,7 +39,7 @@
                     </div>
                     {% endif %}
                     
-                    {% if user.is_recruiter %}
+                    {% if user.is_authenticated and user.is_recruiter %}
                     <div class="mb-3">
                         <strong>Candidate:</strong>
                         <p>{{ application.resume.candidate.email }}</p>
@@ -96,7 +96,7 @@
         </div>
         
         <div class="col-lg-4">
-            {% if user.is_recruiter %}
+            {% if user.is_authenticated and user.is_recruiter %}
             <div class="card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0">Actions</h5>

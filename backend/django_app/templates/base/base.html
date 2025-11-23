@@ -21,7 +21,7 @@
     <!-- Navigation -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
         <div class="container-fluid">
-            <a class="navbar-brand fw-bold" href="{% url 'dashboard:recruiter_dashboard' %}">
+            <a class="navbar-brand fw-bold" href="{% url 'home' %}">
                 <i class="bi bi-briefcase-fill me-2"></i>EquiHire AI
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -68,6 +68,22 @@
                                 </a>
                             </li>
                         {% endif %}
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'jobs:job-list' %}">
+                                <i class="bi bi-briefcase me-1"></i>Jobs
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'accounts:login' %}" title="Login required">
+                                <i class="bi bi-people me-1"></i>Candidates
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'accounts:login' %}" title="Login required">
+                                <i class="bi bi-graph-up me-1"></i>Analytics
+                            </a>
+                        </li>
                     {% endif %}
                 </ul>
                 <ul class="navbar-nav">
@@ -87,6 +103,11 @@
                             </ul>
                         </li>
                     {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{% url 'home' %}">
+                                <i class="bi bi-house me-1"></i>Home
+                            </a>
+                        </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{% url 'accounts:login' %}">Login</a>
                         </li>

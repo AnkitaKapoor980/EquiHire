@@ -13,8 +13,7 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model
-RUN python -m spacy download en_core_web_sm
+# spaCy removed - using lightweight regex-based extraction instead
 
 # Copy application code
 COPY app.py .

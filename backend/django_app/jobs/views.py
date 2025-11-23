@@ -35,6 +35,64 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
             return JobDescriptionCreateSerializer
         return JobDescriptionSerializer
     
+    def get_queryset(self):
+        """Filter queryset based on user role."""
+        queryset = super().get_queryset()
+        # Recruiters see all active jobs, candidates see all active jobs (read-only)
+        return queryset
+    
+    def _is_browser_request(self, request):
+        """Check if request is from a browser."""
+        accept_header = request.META.get('HTTP_ACCEPT', '')
+        return 'text/html' in accept_header or (
+            hasattr(request, 'accepted_renderer') and 
+            request.accepted_renderer.format == 'html'
+        )
+    
+    def list(self, request, *args, **kwargs):
+        """List jobs. Redirect all browser requests to HTML view."""
+        if self._is_browser_request(request):
+            from django.http import HttpResponseRedirect
+            return HttpResponseRedirect('/jobs/')
+        return super().list(request, *args, **kwargs)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Get job detail. Redirect browser requests to HTML view."""
+        if self._is_browser_request(request):
+            from django.http import HttpResponseRedirect
+            pk = kwargs.get('pk')
+            return HttpResponseRedirect(f'/jobs/{pk}/')
+        return super().retrieve(request, *args, **kwargs)
+    
+    def create(self, request, *args, **kwargs):
+        """Create job. Only recruiters can create."""
+        if not request.user.is_recruiter():
+            return Response(
+                {'error': 'Only recruiters can create job postings.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().create(request, *args, **kwargs)
+    
+    def update(self, request, *args, **kwargs):
+        """Update job. Only the job poster can update."""
+        job = self.get_object()
+        if not request.user.is_recruiter() or job.posted_by != request.user:
+            return Response(
+                {'error': 'You can only update your own job postings.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().update(request, *args, **kwargs)
+    
+    def destroy(self, request, *args, **kwargs):
+        """Delete job. Only the job poster can delete."""
+        job = self.get_object()
+        if not request.user.is_recruiter() or job.posted_by != request.user:
+            return Response(
+                {'error': 'You can only delete your own job postings.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        return super().destroy(request, *args, **kwargs)
+    
     def perform_create(self, serializer):
         job = serializer.save()
         # Generate embedding for the job description
@@ -122,6 +180,29 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             # Candidates see their own applications
             return Application.objects.filter(resume__candidate=user)
         return Application.objects.none()
+    
+    def _is_browser_request(self, request):
+        """Check if request is from a browser."""
+        accept_header = request.META.get('HTTP_ACCEPT', '')
+        return 'text/html' in accept_header or (
+            hasattr(request, 'accepted_renderer') and 
+            request.accepted_renderer.format == 'html'
+        )
+    
+    def list(self, request, *args, **kwargs):
+        """List applications. Redirect all browser requests to HTML view."""
+        if self._is_browser_request(request):
+            from django.http import HttpResponseRedirect
+            return HttpResponseRedirect('/jobs/applications/')
+        return super().list(request, *args, **kwargs)
+    
+    def retrieve(self, request, *args, **kwargs):
+        """Get application detail. Redirect browser requests to HTML view."""
+        if self._is_browser_request(request):
+            from django.http import HttpResponseRedirect
+            pk = kwargs.get('pk')
+            return HttpResponseRedirect(f'/jobs/applications/{pk}/')
+        return super().retrieve(request, *args, **kwargs)
     
     @action(detail=True, methods=['post'])
     def audit_fairness(self, request, pk=None):

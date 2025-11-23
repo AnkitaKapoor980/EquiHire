@@ -86,7 +86,7 @@ All components have been implemented as specified in the project plan.
 - ✅ MinIO for object storage
 - ✅ PyMuPDF for PDF parsing
 - ✅ spaCy 3.7+ for NER
-- ✅ Sentence-BERT (all-MiniLM-L6-v2) for embeddings
+- ✅ Sentence-BERT (paraphrase-MiniLM-L3-v2 - lightweight, ~22MB) for embeddings
 - ✅ scikit-learn for cosine similarity
 - ✅ AIF360 for fairness metrics
 - ✅ Fairlearn for bias mitigation

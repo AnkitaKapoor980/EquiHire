@@ -1,0 +1,466 @@
+{% extends 'base/base.html' %}
+{% load static %}
+
+{% block title %}Job API - EquiHire AI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .job-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: #fff;
+    }
+    .job-card:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .array-field {
+        margin-bottom: 1rem;
+    }
+    .array-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .array-item input {
+        flex: 1;
+    }
+    .array-item .btn-remove {
+        color: #dc3545;
+        border: none;
+        background: none;
+        cursor: pointer;
+        padding: 0.25rem 0.5rem;
+    }
+    .array-item .btn-remove:hover {
+        color: #c82333;
+    }
+    .btn-add-item {
+        margin-top: 0.5rem;
+    }
+    .json-viewer {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 1rem;
+        max-height: 400px;
+        overflow-y: auto;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9rem;
+    }
+    .form-section {
+        background: #f8f9fa;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+    .response-message {
+        margin-top: 1rem;
+        padding: 1rem;
+        border-radius: 4px;
+        display: none;
+    }
+    .response-message.success {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+    }
+    .response-message.error {
+        background: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+    }
+    .skill-tag {
+        display: inline-block;
+        background: #e9ecef;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        margin: 0.25rem;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2 class="mb-0"><i class="bi bi-code-square me-2"></i>Job API Interface</h2>
+            <p class="text-muted">Manage job postings via API with proper array field support (Recruiters Only)</p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- API Form Section -->
+        <div class="col-lg-6">
+            <div class="form-section">
+                <h4 class="mb-3"><i class="bi bi-plus-circle me-2"></i>Create New Job</h4>
+                
+                <form id="jobForm">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="title" class="form-label">Title *</label>
+                        <input type="text" class="form-control" id="title" name="title" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="description" class="form-label">Description *</label>
+                        <textarea class="form-control" id="description" name="description" rows="4" required></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="requirements" class="form-label">Requirements *</label>
+                        <textarea class="form-control" id="requirements" name="requirements" rows="4" required></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="location" class="form-label">Location</label>
+                        <input type="text" class="form-control" id="location" name="location" placeholder="e.g., Remote, New York, NY">
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="salary_min" class="form-label">Salary Min</label>
+                            <input type="number" class="form-control" id="salary_min" name="salary_min" min="0" step="0.01" placeholder="0.00">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="salary_max" class="form-label">Salary Max</label>
+                            <input type="number" class="form-control" id="salary_max" name="salary_max" min="0" step="0.01" placeholder="0.00">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="employment_type" class="form-label">Employment Type</label>
+                        <select class="form-select" id="employment_type" name="employment_type">
+                            <option value="full-time">Full Time</option>
+                            <option value="part-time">Part Time</option>
+                            <option value="contract">Contract</option>
+                            <option value="internship">Internship</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Is Active</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="is_active" name="is_active" checked>
+                            <label class="form-check-label" for="is_active">Active</label>
+                        </div>
+                    </div>
+
+                    <!-- Required Skills Array Field -->
+                    <div class="array-field mb-3">
+                        <label class="form-label">Required Skills</label>
+                        <div id="skills-container">
+                            <div class="array-item">
+                                <input type="text" class="form-control skill-input" placeholder="Enter a skill">
+                                <button type="button" class="btn btn-sm btn-remove" onclick="removeArrayItem(this)">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary btn-add-item" onclick="addArrayItem('skills-container', 'skill-input')">
+                            <i class="bi bi-plus"></i> Add Skill
+                        </button>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-circle me-2"></i>Create Job
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Reset
+                        </button>
+                    </div>
+                </form>
+
+                <div id="responseMessage" class="response-message"></div>
+            </div>
+        </div>
+
+        <!-- Job List Section -->
+        <div class="col-lg-6">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4 class="mb-0"><i class="bi bi-list-ul me-2"></i>My Job Postings</h4>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshJobList()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                </button>
+            </div>
+
+            <div id="jobList">
+                {% for job in jobs %}
+                <div class="job-card" data-job-id="{{ job.id }}">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="mb-0">
+                            <i class="bi bi-briefcase me-2"></i>{{ job.title }}
+                        </h5>
+                        <span class="badge bg-{{ job.is_active|yesno:'success,secondary' }}">
+                            {{ job.is_active|yesno:'Active,Inactive' }}
+                        </span>
+                    </div>
+                    
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-calendar me-1"></i>Posted: {{ job.created_at|date:"M d, Y H:i" }}
+                    </p>
+                    
+                    <p class="mb-2">{{ job.description|truncatewords:20 }}</p>
+                    
+                    {% if job.location %}
+                    <div class="mb-2">
+                        <strong>Location:</strong> {{ job.location }}
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-2">
+                        <strong>Type:</strong> {{ job.get_employment_type_display }}
+                    </div>
+                    
+                    {% if job.salary_min %}
+                    <div class="mb-2">
+                        <strong>Salary:</strong> ${{ job.salary_min|floatformat:0 }}{% if job.salary_max %} - ${{ job.salary_max|floatformat:0 }}{% endif %}
+                    </div>
+                    {% endif %}
+                    
+                    {% if job.required_skills %}
+                    <div class="mb-2">
+                        <strong>Required Skills:</strong>
+                        {% for skill in job.required_skills %}
+                        <span class="skill-tag">{{ skill }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    <div class="mb-2">
+                        <strong>Applications:</strong> {{ job.applications.count }}
+                    </div>
+                    
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-info" onclick="viewJobJSON({{ job.id }})">
+                            <i class="bi bi-code me-1"></i>View JSON
+                        </button>
+                        <a href="{% url 'jobs:job-detail' job.id %}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye me-1"></i>View Details
+                        </a>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>No jobs posted yet. Create one using the form on the left.
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- JSON Viewer Modal -->
+            <div class="modal fade" id="jsonModal" tabindex="-1">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Job JSON Data</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <pre id="jsonContent" class="json-viewer"></pre>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const API_URL = '{{ api_url }}';
+const jobsData = {{ jobs_json|safe }};
+
+// Array field management
+function addArrayItem(containerId, inputClass) {
+    const container = document.getElementById(containerId);
+    const newItem = document.createElement('div');
+    newItem.className = 'array-item';
+    newItem.innerHTML = `
+        <input type="text" class="form-control ${inputClass}" placeholder="Enter item">
+        <button type="button" class="btn btn-sm btn-remove" onclick="removeArrayItem(this)">
+            <i class="bi bi-x-circle"></i>
+        </button>
+    `;
+    container.appendChild(newItem);
+}
+
+function removeArrayItem(button) {
+    const container = button.closest('.array-field').querySelector('[id$="-container"]');
+    if (container.children.length > 1) {
+        button.closest('.array-item').remove();
+    }
+}
+
+function getArrayValues(containerId) {
+    const container = document.getElementById(containerId);
+    const inputs = container.querySelectorAll('input');
+    const values = Array.from(inputs)
+        .map(input => input.value.trim())
+        .filter(value => value !== '');
+    return values;
+}
+
+function resetForm() {
+    document.getElementById('jobForm').reset();
+    // Reset array fields to single empty item
+    ['skills-container'].forEach(containerId => {
+        const container = document.getElementById(containerId);
+        while (container.children.length > 1) {
+            container.removeChild(container.lastChild);
+        }
+        if (container.children.length > 0) {
+            container.children[0].querySelector('input').value = '';
+        }
+    });
+    document.getElementById('responseMessage').style.display = 'none';
+}
+
+// Form submission
+document.getElementById('jobForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = {
+        title: document.getElementById('title').value,
+        description: document.getElementById('description').value,
+        requirements: document.getElementById('requirements').value,
+        location: document.getElementById('location').value,
+        salary_min: document.getElementById('salary_min').value || null,
+        salary_max: document.getElementById('salary_max').value || null,
+        employment_type: document.getElementById('employment_type').value,
+        is_active: document.getElementById('is_active').checked,
+        required_skills: getArrayValues('skills-container')
+    };
+    
+    const responseMessage = document.getElementById('responseMessage');
+    responseMessage.style.display = 'none';
+    
+    try {
+        const response = await fetch(API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            responseMessage.className = 'response-message success';
+            responseMessage.innerHTML = `<i class="bi bi-check-circle me-2"></i>Job created successfully!<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+            responseMessage.style.display = 'block';
+            resetForm();
+            setTimeout(() => refreshJobList(), 1000);
+        } else {
+            responseMessage.className = 'response-message error';
+            responseMessage.innerHTML = `<i class="bi bi-exclamation-circle me-2"></i>Error: ${JSON.stringify(data, null, 2)}`;
+            responseMessage.style.display = 'block';
+        }
+    } catch (error) {
+        responseMessage.className = 'response-message error';
+        responseMessage.innerHTML = `<i class="bi bi-exclamation-circle me-2"></i>Error: ${error.message}`;
+        responseMessage.style.display = 'block';
+    }
+});
+
+// View job JSON
+function viewJobJSON(jobId) {
+    const job = jobsData.find(j => j.id === jobId);
+    if (job) {
+        document.getElementById('jsonContent').textContent = JSON.stringify(job, null, 2);
+        const modal = new bootstrap.Modal(document.getElementById('jsonModal'));
+        modal.show();
+    } else {
+        // Fetch from API if not in local data
+        fetch(`${API_URL}${jobId}/`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('jsonContent').textContent = JSON.stringify(data, null, 2);
+                const modal = new bootstrap.Modal(document.getElementById('jsonModal'));
+                modal.show();
+            })
+            .catch(error => {
+                alert('Error fetching job data: ' + error.message);
+            });
+    }
+}
+
+// Refresh job list
+async function refreshJobList() {
+    try {
+        const response = await fetch(API_URL);
+        const data = await response.json();
+        
+        const listContainer = document.getElementById('jobList');
+        if (data.results && data.results.length > 0) {
+            listContainer.innerHTML = data.results.map(job => `
+                <div class="job-card" data-job-id="${job.id}">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="mb-0">
+                            <i class="bi bi-briefcase me-2"></i>${job.title}
+                        </h5>
+                        <span class="badge bg-${job.is_active ? 'success' : 'secondary'}">
+                            ${job.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                    </div>
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-calendar me-1"></i>Posted: ${new Date(job.created_at).toLocaleString()}
+                    </p>
+                    <p class="mb-2">${job.description.substring(0, 100)}...</p>
+                    ${job.location ? `<div class="mb-2"><strong>Location:</strong> ${job.location}</div>` : ''}
+                    <div class="mb-2"><strong>Type:</strong> ${job.employment_type}</div>
+                    ${job.salary_min ? `<div class="mb-2"><strong>Salary:</strong> $${job.salary_min}${job.salary_max ? ' - $' + job.salary_max : ''}</div>` : ''}
+                    ${job.required_skills && job.required_skills.length > 0 ? `
+                        <div class="mb-2">
+                            <strong>Required Skills:</strong>
+                            ${job.required_skills.map(skill => `<span class="skill-tag">${skill}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    <div class="mb-2"><strong>Applications:</strong> ${job.application_count || 0}</div>
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-outline-info" onclick="viewJobJSON(${job.id})">
+                            <i class="bi bi-code me-1"></i>View JSON
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            listContainer.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>No jobs found.
+                </div>
+            `;
+        }
+    } catch (error) {
+        alert('Error refreshing job list: ' + error.message);
+    }
+}
+
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}
+

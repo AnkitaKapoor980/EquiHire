@@ -15,9 +15,7 @@ ENV PIP_DEFAULT_TIMEOUT=120
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download spaCy model
-RUN pip install --no-cache-dir https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl \
-    && python -m spacy link en_core_web_sm en_core_web_sm
+# spaCy removed - using lightweight regex-based extraction instead
 
 # Copy application code
 COPY backend/flask_services/parser_service/app.py .

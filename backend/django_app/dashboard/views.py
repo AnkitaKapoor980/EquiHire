@@ -1,5 +1,6 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -183,6 +184,45 @@ def candidate_dashboard(request):
     })
 
 
+@login_required
+def analytics_view_html(request):
+    """HTML view for analytics dashboard."""
+    if not request.user.is_recruiter():
+        messages.error(request, 'Access denied.')
+        return redirect('dashboard:recruiter_dashboard')
+    
+    user = request.user
+    
+    # Applications over time (last 30 days)
+    thirty_days_ago = timezone.now() - timedelta(days=30)
+    applications_over_time = Application.objects.filter(
+        job__posted_by=user,
+        created_at__gte=thirty_days_ago
+    ).extra(
+        select={'day': "date(applications.created_at)"}
+    ).values('day').annotate(count=Count('id')).order_by('day')
+    
+    # Status distribution
+    status_distribution = Application.objects.filter(
+        job__posted_by=user
+    ).values('status').annotate(count=Count('id'))
+    
+    # Top skills in applications
+    from django.db.models import Q
+    top_skills = Resume.objects.filter(
+        applications__job__posted_by=user
+    ).values('skills').annotate(
+        count=Count('id', distinct=True)
+    ).order_by('-count')[:10]
+    
+    context = {
+        'applications_over_time': list(applications_over_time),
+        'status_distribution': list(status_distribution),
+        'top_skills': list(top_skills),
+    }
+    return render(request, 'dashboard/analytics.html', context)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def analytics(request):
@@ -198,7 +238,7 @@ def analytics(request):
         job__posted_by=user,
         created_at__gte=thirty_days_ago
     ).extra(
-        select={'day': "date(created_at)"}
+        select={'day': "date(applications.created_at)"}
     ).values('day').annotate(count=Count('id')).order_by('day')
     
     # Status distribution

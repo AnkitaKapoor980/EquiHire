@@ -7,11 +7,11 @@ from .models import JobDescription, Application
 from candidates.models import Resume
 import requests
 from django.conf import settings
+import json
 
 
-@login_required
 def job_list_view(request):
-    """List all jobs."""
+    """List all jobs. Allow unauthenticated users to view jobs."""
     jobs = JobDescription.objects.filter(is_active=True).order_by('-created_at')
     
     # Filter by search query
@@ -27,19 +27,18 @@ def job_list_view(request):
     return render(request, 'jobs/job_list.html', context)
 
 
-@login_required
 def job_detail_view(request, pk):
-    """Job detail view."""
+    """Job detail view. Allow unauthenticated users to view job details."""
     job = get_object_or_404(JobDescription, pk=pk)
     
-    # Get applications for this job (if recruiter)
+    # Get applications for this job (if recruiter and authenticated)
     applications = None
-    if request.user.is_recruiter() and job.posted_by == request.user:
+    if request.user.is_authenticated and request.user.is_recruiter() and job.posted_by == request.user:
         applications = Application.objects.filter(job=job).order_by('-score', '-created_at')
     
     # Check if candidate has already applied
     has_applied = False
-    if request.user.is_candidate():
+    if request.user.is_authenticated and request.user.is_candidate():
         has_applied = Application.objects.filter(
             job=job,
             resume__candidate=request.user
@@ -49,7 +48,7 @@ def job_detail_view(request, pk):
         'job': job,
         'applications': applications,
         'has_applied': has_applied,
-        'can_apply': request.user.is_candidate() and not has_applied
+        'can_apply': request.user.is_authenticated and request.user.is_candidate() and not has_applied
     }
     return render(request, 'jobs/job_detail.html', context)
 
@@ -91,7 +90,8 @@ def job_create_view(request):
             pass  # Embedding can be generated later
         
         messages.success(request, 'Job posted successfully!')
-        return redirect('jobs:job-detail', pk=job.id)
+        # Redirect to job list instead of detail to avoid any API view confusion
+        return redirect('jobs:job-list')
     
     return render(request, 'jobs/job_form.html', {'form_type': 'create'})
 
@@ -113,6 +113,83 @@ def application_list_view(request):
 
 
 @login_required
+def application_create_view(request):
+    """Create a new application."""
+    if not request.user.is_candidate():
+        messages.error(request, 'Only candidates can apply for jobs.')
+        return redirect('jobs:job-list')
+    
+    if request.method == 'POST':
+        job_id = request.POST.get('job_id')
+        resume_id = request.POST.get('resume_id')
+        
+        if not job_id or not resume_id:
+            messages.error(request, 'Missing required fields.')
+            return redirect('jobs:job-list')
+        
+        job = get_object_or_404(JobDescription, pk=job_id)
+        resume = get_object_or_404(Resume, pk=resume_id, candidate=request.user)
+        
+        # Check if already applied
+        if Application.objects.filter(job=job, resume=resume).exists():
+            messages.warning(request, 'You have already applied for this job.')
+            return redirect('jobs:job-detail', pk=job.id)
+        
+        # Create application
+        application = Application.objects.create(
+            job=job,
+            resume=resume,
+            status='pending'
+        )
+        
+        # Calculate match score
+        try:
+            response = requests.post(
+                f"{settings.MATCHER_SERVICE_URL}/api/match",
+                json={
+                    'job_id': job.id,
+                    'resume_id': resume.id
+                },
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                application.score = data.get('score', 0.0)
+                application.save(update_fields=['score'])
+        except Exception as e:
+            pass  # Score can be calculated later
+        
+        messages.success(request, 'Application submitted successfully!')
+        return redirect('jobs:application-detail', pk=application.id)
+    
+    return redirect('jobs:job-list')
+
+
+@login_required
+def application_update_view(request, pk):
+    """Update application status (for recruiters)."""
+    application = get_object_or_404(Application, pk=pk)
+    
+    if not request.user.is_recruiter() or application.job.posted_by != request.user:
+        messages.error(request, 'Access denied.')
+        return redirect('jobs:application-list')
+    
+    if request.method == 'POST':
+        status = request.POST.get('status')
+        notes = request.POST.get('notes', '')
+        if status in ['pending', 'reviewing', 'shortlisted', 'rejected', 'hired']:
+            application.status = status
+            if notes:
+                application.notes = notes
+            application.save(update_fields=['status', 'notes'])
+            messages.success(request, f'Application status updated to {status}.')
+        else:
+            messages.error(request, 'Invalid status.')
+    
+    return redirect('jobs:application-detail', pk=application.id)
+
+
+@login_required
 def application_detail_view(request, pk):
     """Application detail view."""
     application = get_object_or_404(Application, pk=pk)
@@ -127,4 +204,24 @@ def application_detail_view(request, pk):
     
     context = {'application': application}
     return render(request, 'jobs/application_detail.html', context)
+
+
+@login_required
+def job_api_html_view(request):
+    """Custom HTML view for Job API that properly handles array fields (recruiters only)."""
+    if not request.user.is_recruiter():
+        messages.error(request, 'Only recruiters can access the job API interface.')
+        return redirect('jobs:job-list')
+    
+    jobs = JobDescription.objects.filter(posted_by=request.user).order_by('-created_at')
+    
+    # Serialize jobs for JSON display
+    from .serializers import JobDescriptionSerializer
+    serialized_jobs = [JobDescriptionSerializer(job).data for job in jobs]
+    
+    return render(request, 'jobs/job_api.html', {
+        'jobs': jobs,
+        'jobs_json': json.dumps(serialized_jobs),
+        'api_url': '/jobs/api/jobs/'
+    })
 

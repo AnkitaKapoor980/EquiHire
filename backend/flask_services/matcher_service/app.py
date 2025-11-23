@@ -23,11 +23,11 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# Load Sentence-BERT model
-MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'
+# Load lightweight Sentence-BERT model (paraphrase-MiniLM-L3-v2 is ~3x smaller than all-MiniLM-L6-v2)
+MODEL_NAME = 'sentence-transformers/paraphrase-MiniLM-L3-v2'
 try:
     model = SentenceTransformer(MODEL_NAME)
-    logger.info(f"Loaded Sentence-BERT model: {MODEL_NAME}")
+    logger.info(f"Loaded lightweight Sentence-BERT model: {MODEL_NAME}")
 except Exception as e:
     logger.error(f"Error loading model: {str(e)}")
     model = None

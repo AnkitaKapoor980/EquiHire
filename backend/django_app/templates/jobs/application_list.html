@@ -9,7 +9,7 @@
         <div class="col-12">
             <h2 class="mb-0">
                 <i class="bi bi-file-earmark-text me-2"></i>
-                {% if user.is_recruiter %}Candidate Applications{% else %}My Applications{% endif %}
+                {% if user.is_authenticated and user.is_recruiter %}Candidate Applications{% else %}My Applications{% endif %}
             </h2>
         </div>
     </div>
@@ -23,7 +23,7 @@
                             <table class="table table-hover">
                                 <thead>
                                     <tr>
-                                        {% if user.is_recruiter %}
+                                        {% if user.is_authenticated and user.is_recruiter %}
                                         <th>Candidate</th>
                                         {% endif %}
                                         <th>Job Title</th>
@@ -36,7 +36,7 @@
                                 <tbody>
                                     {% for app in applications %}
                                     <tr>
-                                        {% if user.is_recruiter %}
+                                        {% if user.is_authenticated and user.is_recruiter %}
                                         <td>{{ app.resume.candidate.email }}</td>
                                         {% endif %}
                                         <td><strong>{{ app.job.title }}</strong></td>
@@ -69,7 +69,7 @@
                         <div class="empty-state">
                             <i class="bi bi-inbox"></i>
                             <h4>No applications found</h4>
-                            {% if user.is_candidate %}
+                            {% if user.is_authenticated and user.is_candidate %}
                             <p><a href="{% url 'jobs:job-list' %}">Browse jobs</a> to get started!</p>
                             {% endif %}
                         </div>
