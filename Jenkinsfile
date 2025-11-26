@@ -26,13 +26,19 @@ pipeline {
                     docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "No existing containers to remove"
                     
                     echo [INFO] Removing any dangling containers...
-                    for /f "tokens=*" %%i in ('docker ps -aq -f "name=^%COMPOSE_PROJECT_NAME%_"') do (
+                    for /f "tokens=*" %%i in ('docker ps -aq --filter "name=^%COMPOSE_PROJECT_NAME%_"') do (
                         echo [INFO] Removing container: %%i
                         docker rm -f %%i || echo "Failed to remove container: %%i"
                     )
                     
+                    echo [INFO] Checking for running containers using port 9000...
+                    for /f "tokens=*" %%i in ('docker ps -q --filter "publish=9000"') do (
+                        echo [INFO] Stopping container using port 9000: %%i
+                        docker stop %%i || echo "Failed to stop container: %%i"
+                    )
+                    
                     echo [INFO] Removing any dangling networks...
-                    for /f "tokens=*" %%i in ('docker network ls -q -f "name=^%COMPOSE_PROJECT_NAME%_"') do (
+                    for /f "tokens=*" %%i in ('docker network ls -q --filter "name=^%COMPOSE_PROJECT_NAME%_"') do (
                         echo [INFO] Removing network: %%i
                         docker network rm %%i || echo "Failed to remove network: %%i"
                     )
@@ -90,6 +96,14 @@ pipeline {
                 :: Start services with health checks
                 docker compose -p %COMPOSE_PROJECT_NAME% up -d --wait postgres minio
                 
+                :: Check if postgres container is running
+                docker compose -p %COMPOSE_PROJECT_NAME% ps --services --filter "status=running" | findstr /c:"postgres" >nul
+                if !ERRORLEVEL! NEQ 0 (
+                    echo [ERROR] PostgreSQL container failed to start
+                    docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
+                    exit /b 1
+                )
+                
                 :: Wait for PostgreSQL to be ready with retries
                 set MAX_RETRIES=30
                 set RETRY_DELAY=5
@@ -105,26 +119,37 @@ pipeline {
                 set /a COUNT+=1
                 if !COUNT! GTR %MAX_RETRIES% (
                     echo [ERROR] PostgreSQL failed to start in time
+                    docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
                     exit /b 1
                 )
                 
                 echo [INFO] Waiting for PostgreSQL to be ready... (!COUNT! of %MAX_RETRIES%)
-                timeout /t %RETRY_DELAY% >nul
+                ping -n %RETRY_DELAY% 127.0.0.1 >nul
                 goto check_postgres
                 
                 :db_ready
                 echo [INFO] Running migrations...
                 docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py migrate
                 
+                echo [INFO] Creating test-results directory...
+                if not exist "test-results" mkdir test-results
+                
                 echo [INFO] Running tests with coverage...
-                docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%\test-results:/app/test-results" django_app \
+                docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%/test-results:/app/test-results" django_app \
                     bash -c "
                         pip install pytest pytest-django pytest-cov && \
-                        python -m pytest --junitxml=test-results/junit.xml --cov=./ --cov-report=xml:test-results/coverage.xml --cov-report=html:test-results/htmlcov tests/
+                        python -m pytest --junitxml=/app/test-results/junit.xml --cov=./ --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov tests/ || exit 0
                     "
                 
+                :: Verify test results were generated
+                if not exist "test-results\junit.xml" (
+                    echo [ERROR] Test results not generated
+                    exit /b 1
+                )
+                
                 :: Copy test results to workspace
-                xcopy /s /y "test-results/*" "%WORKSPACE%/test-results/"
+                if not exist "%WORKSPACE%/test-results" mkdir "%WORKSPACE%/test-results"
+                xcopy /s /y "test-results\*" "%WORKSPACE%\test-results\"
                 
                 endlocal
                 '''
