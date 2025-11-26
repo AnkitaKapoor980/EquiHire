@@ -158,9 +158,14 @@ pipeline {
                 if not exist "test-results" mkdir test-results
                 
                 echo [INFO] Installing test dependencies and running tests...
-                docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%/test-results:/app/test-results" -v "%CD%/backend/django_app:/app" -w /app django_app \
+                docker compose -p %COMPOSE_PROJECT_NAME% run --rm \
+                    -v "%CD%/test-results:/app/test-results" \
+                    -v "%CD%/backend:/app/backend" \
+                    -v "%CD%/backend/django_app:/app/backend/django_app" \
+                    -w /app/backend/django_app \
+                    django_app \
                     bash -c "
-                        pip install -r requirements.txt && \
+                        pip install -r ../requirements.txt && \
                         pip install pytest pytest-django pytest-cov && \
                         python -m pytest --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov tests/
                     "
