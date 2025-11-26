@@ -213,14 +213,23 @@ pipeline {
             }
             post {
                 always {
+                    // Publish JUnit test results
                     junit 'test-results/junit.xml'
-                        alwaysLinkToLastBuild: true,
-                        keepAll: true,
-                        reportDir: 'test-results/htmlcov',
-                        reportFiles: 'index.html',
-                        reportName: 'Coverage Report'
-                    ])
-                    archiveArtifacts artifacts: 'test-results/coverage.xml', allowEmptyArchive: true
+                    
+                    // Publish HTML coverage report if it exists
+                    script {
+                        if (fileExists('test-results/coverage.xml')) {
+                            publishHTML([
+                                allowMissing: true,
+                                alwaysLinkToLastBuild: true,
+                                keepAll: true,
+                                reportDir: 'test-results/htmlcov',
+                                reportFiles: 'index.html',
+                                reportName: 'Coverage Report'
+                            ])
+                            archiveArtifacts artifacts: 'test-results/coverage.xml', allowEmptyArchive: true
+                        }
+                    }
                 }
             }
         }
