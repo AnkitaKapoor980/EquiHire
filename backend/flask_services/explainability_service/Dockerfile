@@ -1,13 +1,15 @@
+# Use a smaller base image
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
+# Install minimal system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 
 # Install Python dependencies

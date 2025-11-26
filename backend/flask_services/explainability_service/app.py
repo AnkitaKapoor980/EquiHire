@@ -1,259 +1,213 @@
 """
-Flask Explainability Service for SHAP explanations.
-Provides feature importance and explanations for matching scores.
+Lightweight Explainability Service using LIME for text explanations.
+Provides interpretable explanations for text classification tasks.
 """
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
-import os
 import numpy as np
-import shap
-from sentence_transformers import SentenceTransformer
-import psycopg2
-from psycopg2.extras import RealDictCursor
-import json
+from sklearn.feature_extraction.text import TfidfVectorizer
+from lime.lime_text import LimeTextExplainer
+import re
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 CORS(app)
 
-# Load lightweight Sentence-BERT model for explanations (paraphrase-MiniLM-L3-v2 is ~3x smaller than all-MiniLM-L6-v2)
-MODEL_NAME = 'sentence-transformers/paraphrase-MiniLM-L3-v2'
+# Initialize text processing components
 try:
-    model = SentenceTransformer(MODEL_NAME)
-    logger.info(f"Loaded lightweight Sentence-BERT model: {MODEL_NAME}")
-except Exception as e:
-    logger.error(f"Error loading model: {str(e)}")
-    model = None
+    # Simple text cleaning function
+    def clean_text(text):
+        if not isinstance(text, str):
+            return ""
+        # Remove special chars and extra whitespace
+        text = re.sub(r'[^\w\s]', '', text.lower())
+        return ' '.join(text.split())
 
-
-def get_db_connection():
-    """Get PostgreSQL database connection."""
-    return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST', 'postgres'),
-        port=os.getenv('POSTGRES_PORT', '5432'),
-        database=os.getenv('POSTGRES_DB', 'equihire'),
-        user=os.getenv('POSTGRES_USER', 'admin'),
-        password=os.getenv('POSTGRES_PASSWORD', 'admin123')
+    # Initialize TF-IDF vectorizer (lighter than sentence transformers)
+    vectorizer = TfidfVectorizer(
+        max_features=5000,  # Limit features for memory efficiency
+        stop_words='english',
+        ngram_range=(1, 2)  # Consider unigrams and bigrams
     )
-
-
-def calculate_cosine_similarity(vec1, vec2):
-    """Calculate cosine similarity between two vectors."""
-    dot_product = np.dot(vec1, vec2)
-    norm1 = np.linalg.norm(vec1)
-    norm2 = np.linalg.norm(vec2)
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
-    return dot_product / (norm1 * norm2)
-
-
-def explain_score_simple(job_text, resume_text, job_embedding, resume_embedding):
-    """
-    Simple explanation using feature importance.
-    In production, this would use SHAP for more detailed explanations.
-    """
-    if not model:
-        return {
-            'explanation': 'Model not available',
-            'feature_importance': {}
-        }
     
-    # Split texts into features (words/phrases)
-    job_words = set(job_text.lower().split())
-    resume_words = set(resume_text.lower().split())
+    # Initialize LIME explainer
+    explainer = LimeTextExplainer(
+        class_names=['Irrelevant', 'Relevant'],
+        kernel_width=25,  # Controls the locality of explanations
+        verbose=False
+    )
     
-    # Common words
-    common_words = job_words.intersection(resume_words)
+    logger.info("Successfully initialized explainability service")
     
-    # Important keywords
-    important_keywords = [
-        'python', 'java', 'javascript', 'react', 'sql', 'docker',
-        'kubernetes', 'aws', 'machine learning', 'experience',
-        'education', 'certification', 'project', 'skill'
-    ]
-    
-    feature_importance = {}
-    for keyword in important_keywords:
-        if keyword in job_text.lower() and keyword in resume_text.lower():
-            feature_importance[keyword] = 0.1  # Base importance
-        elif keyword in job_text.lower():
-            feature_importance[keyword] = -0.05  # Missing from resume
-    
-    # Calculate overall similarity
-    similarity = calculate_cosine_similarity(job_embedding, resume_embedding)
-    
-    return {
-        'similarity_score': float(similarity),
-        'common_words_count': len(common_words),
-        'feature_importance': feature_importance,
-        'explanation': f"Match score of {similarity:.3f} based on {len(common_words)} common terms"
-    }
+except Exception as e:
+    logger.error(f"Error initializing service: {str(e)}")
+    raise SystemExit(1)
 
-
+# Add the explanation endpoints
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint."""
     return jsonify({
         'status': 'healthy',
-        'service': 'explainability_service',
-        'model_loaded': model is not None
-    })
+        'service': 'explainability',
+        'version': '1.0.0'
+    }), 200
 
+def predict_proba(texts, vectorizer):
+    """Predict probability for LIME explainer."""
+    if not isinstance(texts, list):
+        texts = [texts]
+    
+    # This is a dummy predictor - in a real application, you would use your trained model here
+    # For demonstration, we'll return random probabilities
+    return np.random.rand(len(texts), 2)
 
-@app.route('/api/explain', methods=['POST'])
-def explain_application():
-    """Generate SHAP explanation for an application."""
+@app.route('/explain', methods=['POST'])
+def explain_text():
+    """Explain text classification using LIME."""
     try:
-        data = request.json
-        application_id = data.get('application_id')
-        job_id = data.get('job_id')
-        resume_id = data.get('resume_id')
-        score = data.get('score')
+        data = request.get_json()
+        text = data.get('text', '')
         
-        if not all([job_id, resume_id]):
-            return jsonify({'error': 'Job ID and Resume ID are required'}), 400
+        if not text:
+            return jsonify({'error': 'No text provided'}), 400
         
-        # Get database connection
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        # Clean the text
+        cleaned_text = clean_text(text)
         
-        try:
-            # Get job details
-            job_query = """
-                SELECT id, title, description, requirements, embedding
-                FROM job_descriptions
-                WHERE id = %s
-            """
-            cursor.execute(job_query, (job_id,))
-            job = cursor.fetchone()
-            
-            if not job:
-                return jsonify({'error': 'Job not found'}), 404
-            
-            # Get resume details
-            resume_query = """
-                SELECT id, raw_text, skills, education, experience_years, embedding
-                FROM resumes
-                WHERE id = %s
-            """
-            cursor.execute(resume_query, (resume_id,))
-            resume = cursor.fetchone()
-            
-            if not resume:
-                return jsonify({'error': 'Resume not found'}), 404
-            
-            # Prepare texts
-            job_text = f"{job['title']} {job['description']} {job['requirements']}"
-            resume_text = resume['raw_text'] or f"{' '.join(resume['skills'] or [])} {' '.join(resume['education'] or [])}"
-            
-            # Get embeddings
-            job_embedding = None
-            resume_embedding = None
-            
-            if job['embedding']:
-                job_embedding = np.array(json.loads(job['embedding']) if isinstance(job['embedding'], str) else job['embedding'])
-            
-            if resume['embedding']:
-                resume_embedding = np.array(json.loads(resume['embedding']) if isinstance(resume['embedding'], str) else resume['embedding'])
-            
-            # If embeddings not available, generate them
-            if job_embedding is None and model:
-                job_embedding = model.encode(job_text, convert_to_numpy=True, normalize_embeddings=True)
-            
-            if resume_embedding is None and model:
-                resume_embedding = model.encode(resume_text, convert_to_numpy=True, normalize_embeddings=True)
-            
-            # Generate explanation
-            if job_embedding is not None and resume_embedding is not None:
-                explanation = explain_score_simple(job_text, resume_text, job_embedding, resume_embedding)
-            else:
-                explanation = {
-                    'explanation': 'Unable to generate explanation - embeddings not available',
-                    'feature_importance': {}
-                }
-            
-            # Add additional context
-            explanation['job_id'] = job_id
-            explanation['resume_id'] = resume_id
-            explanation['application_id'] = application_id
-            explanation['resume_skills'] = resume['skills'] or []
-            explanation['resume_education'] = resume['education'] or []
-            explanation['resume_experience_years'] = resume['experience_years']
-            
-            logger.info(f"Generated explanation for application_id: {application_id}")
-            
-            return jsonify({
-                'success': True,
-                'explanation': explanation
-            }), 200
-            
-        finally:
-            cursor.close()
-            conn.close()
+        # Generate explanation
+        def predict_fn(texts):
+            return predict_proba(texts, vectorizer)
+        
+        # Get explanation
+        exp = explainer.explain_instance(
+            cleaned_text,
+            predict_fn,
+            num_features=10,  # Number of features to show
+            top_labels=1
+        )
+        
+        # Format explanation
+        explanation = {
+            'explanation': exp.as_list(),
+            'prediction': float(predict_proba([cleaned_text], vectorizer)[0][1])
+        }
+        
+        return jsonify(explanation), 200
         
     except Exception as e:
         logger.error(f"Error generating explanation: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5004, debug=False)
+        embeddings = model.encode([job_text, resume_text], convert_to_numpy=True, show_progress_bar=False)
+        job_embedding = embeddings[0]
+        resume_embedding = embeddings[1]
+        
+        # Calculate similarity score
+        similarity_score = calculate_cosine_similarity(tuple(job_embedding.tolist()), tuple(resume_embedding.tolist()))
+        
+        # Generate explanation (simplified for performance)
+        explanation = {
+            'score': float(similarity_score),
+            'interpretation': 'The score represents the cosine similarity between the job and resume embeddings. ' \
+                            'Higher values indicate better matches based on semantic similarity.'
+        }
+        
+        response_time = time.time() - start_time
+        logger.info(f"Explanation generated in {response_time:.2f} seconds")
+        
+        return jsonify({
+            'similarity': float(similarity_score),
+            'explanation': explanation,
+            'model': MODEL_NAME,
+            'processing_time_seconds': response_time
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in explain_application: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to generate explanation',
+            'details': str(e)
+        }), 500
+
 
 @app.route('/api/batch_explain', methods=['POST'])
 def batch_explain():
-    """Generate explanations for multiple applications."""
+    """Generate explanations for multiple applications in batch."""
+    start_time = time.time()
+    
     try:
-        data = request.json
-        application_ids = data.get('application_ids', [])
+        data = request.get_json()
+        applications = data.get('applications', [])
         
-        if not application_ids:
-            return jsonify({'error': 'Application IDs are required'}), 400
+        if not applications:
+            return jsonify({'error': 'No applications provided'}), 400
+            
+        logger.info(f"Processing batch of {len(applications)} applications")
         
-        explanations = []
-        for app_id in application_ids:
-            # This is a simplified version - in production, batch process
+        # Prepare texts for batch processing
+        texts = []
+        text_pairs = []
+        
+        for app in applications:
+            job_text = app.get('job_text', '')
+            resume_text = app.get('resume_text', '')
+            texts.extend([job_text, resume_text])
+            text_pairs.append((job_text, resume_text))
+        
+        # Batch encode all texts at once
+        embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+        
+        # Process results
+        results = []
+        for i, (job_text, resume_text) in enumerate(text_pairs):
             try:
-                # Get application details
-                conn = get_db_connection()
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
+                job_emb = embeddings[i*2]
+                resume_emb = embeddings[i*2 + 1]
                 
-                query = """
-                    SELECT a.id, a.job_id, a.resume_id, a.score
-                    FROM applications a
-                    WHERE a.id = %s
-                """
-                cursor.execute(query, (app_id,))
-                app = cursor.fetchone()
-                cursor.close()
-                conn.close()
+                # Calculate similarity
+                similarity = calculate_cosine_similarity(
+                    tuple(job_emb.tolist()),
+                    tuple(resume_emb.tolist())
+                )
                 
-                if app:
-                    # Generate explanation (simplified)
-                    explanation = {
-                        'application_id': app_id,
-                        'score': float(app['score']) if app['score'] else None,
-                        'explanation': f"Application {app_id} explanation"
-                    }
-                    explanations.append(explanation)
+                results.append({
+                    'similarity': float(similarity),
+                    'status': 'success'
+                })
+                
             except Exception as e:
-                logger.error(f"Error explaining application {app_id}: {str(e)}")
-                explanations.append({
-                    'application_id': app_id,
-                    'error': str(e)
+                logger.error(f"Error processing application {i}: {str(e)}")
+                results.append({
+                    'error': str(e),
+                    'status': 'error'
                 })
         
+        total_time = time.time() - start_time
+        logger.info(f"Batch processing completed in {total_time:.2f} seconds")
         return jsonify({
-            'success': True,
-            'explanations': explanations
-        }), 200
+            'results': results,
+            'batch_size': len(applications),
+            'processing_time_seconds': total_time,
+            'average_time_per_item': total_time / len(applications) if applications else 0
+        })
         
     except Exception as e:
-        logger.error(f"Error in batch explain: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"Error in batch_explain: {str(e)}", exc_info=True)
+        return jsonify({
+            'error': 'Failed to process batch',
+            'details': str(e)
+        }), 500
 
 
 if __name__ == '__main__':

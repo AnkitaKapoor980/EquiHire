@@ -5,9 +5,10 @@ Handles resume and job description data.
 import os
 import pandas as pd
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, Json
 import logging
 from pathlib import Path
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -33,8 +34,8 @@ def load_resumes(csv_path, conn):
     
     # Create a default candidate user if not exists
     cursor.execute("""
-        INSERT INTO users (email, username, role, is_active)
-        VALUES ('default_candidate@example.com', 'default_candidate', 'candidate', true)
+        INSERT INTO users (email, username, password, first_name, last_name, role, is_active, is_staff, is_superuser, date_joined, created_at, updated_at)
+        VALUES ('default_candidate@example.com', 'default_candidate', 'pbkdf2_sha256$600000$dummy$dummy', 'Default', 'Candidate', 'candidate', true, false, false, NOW(), NOW(), NOW())
         ON CONFLICT (email) DO NOTHING
         RETURNING id
     """)
@@ -88,18 +89,21 @@ def load_resumes(csv_path, conn):
             0,  # file_size
             'application/pdf',
             resume_text,
-            {'raw_text': resume_text, 'category': category, 'html': row.get('Resume_html', '')},
+            Json({'raw_text': resume_text, 'category': category, 'html': row.get('Resume_html', '')}),
             skills,
             education,
             experience_years,
-            True
+            [],  # certifications
+            True,
+            'NOW()',  # uploaded_at
+            'NOW()'   # updated_at
         ))
     
     execute_values(
         cursor,
         """
         INSERT INTO resumes (candidate_id, file_name, file_path, file_size, file_type,
-                           raw_text, parsed_data, skills, education, experience_years, is_active)
+                           raw_text, parsed_data, skills, education, experience_years, certifications, is_active, uploaded_at, updated_at)
         VALUES %s
         ON CONFLICT DO NOTHING
         """,
@@ -120,8 +124,8 @@ def load_jobs(csv_path, conn):
     
     # Create a default recruiter user if not exists
     cursor.execute("""
-        INSERT INTO users (email, username, role, is_active)
-        VALUES ('default_recruiter@example.com', 'default_recruiter', 'recruiter', true)
+        INSERT INTO users (email, username, password, first_name, last_name, role, is_active, is_staff, is_superuser, date_joined, created_at, updated_at)
+        VALUES ('default_recruiter@example.com', 'default_recruiter', 'pbkdf2_sha256$600000$dummy$dummy', 'Default', 'Recruiter', 'recruiter', true, false, false, NOW(), NOW(), NOW())
         ON CONFLICT (email) DO NOTHING
         RETURNING id
     """)
@@ -144,11 +148,11 @@ def load_jobs(csv_path, conn):
         # Handle skills
         required_skills = []
         if 'required_skills' in df.columns and pd.notna(row.get('required_skills')):
-            required_skills = [s.strip() for s in str(row.get('required_skills')).split(',')]
+            required_skills = [s.strip()[:100] for s in str(row.get('required_skills')).split(',')]
         elif 'Skills' in df.columns and pd.notna(row.get('Skills')):
-            required_skills = [s.strip() for s in str(row.get('Skills')).split(';')]
+            required_skills = [s.strip()[:100] for s in str(row.get('Skills')).split(';')]
         elif 'Keywords' in df.columns and pd.notna(row.get('Keywords')):
-            required_skills = [s.strip() for s in str(row.get('Keywords')).split(';')]
+            required_skills = [s.strip()[:100] for s in str(row.get('Keywords')).split(';')]
         
         # Handle salary (if available)
         salary_min = None
@@ -181,7 +185,9 @@ def load_jobs(csv_path, conn):
             employment_type,
             required_skills,
             recruiter_id,
-            True
+            True,
+            'NOW()',  # created_at
+            'NOW()'   # updated_at
         ))
     
     execute_values(
@@ -189,7 +195,7 @@ def load_jobs(csv_path, conn):
         """
         INSERT INTO job_descriptions (title, description, requirements, location,
                                      salary_min, salary_max, employment_type,
-                                     required_skills, posted_by_id, is_active)
+                                     required_skills, posted_by_id, is_active, created_at, updated_at)
         VALUES %s
         ON CONFLICT DO NOTHING
         """,

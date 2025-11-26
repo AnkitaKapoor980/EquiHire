@@ -1,5 +1,7 @@
 from django.shortcuts import render, redirect
-from django.contrib.auth import login, authenticate
+from django.contrib.auth import login, authenticate, logout as auth_logout
+from django.contrib.auth.views import LogoutView as BaseLogoutView
+from django.urls import reverse_lazy
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from rest_framework import status, generics, permissions
@@ -142,3 +144,14 @@ def update_profile_view(request):
         return Response(serializer.data, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
+class CustomLogoutView(BaseLogoutView):
+    """Custom logout view that uses our template."""
+    template_name = 'registration/logged_out.html'
+    next_page = 'home'
+
+
+def logout_view(request):
+    """View for user logout."""
+    auth_logout(request)
+    return redirect('home')

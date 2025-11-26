@@ -10,11 +10,21 @@ load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Create logs directory if it doesn't exist
+LOG_DIR = os.path.join(BASE_DIR, 'logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Import logging config
+from .logging_config import LOGGING
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-change-this-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
+
+# Logging configuration - imported from logging_config.py
+# Logs will be written to both console and file (logs/django.log)
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,0.0.0.0').split(',')
 
@@ -79,13 +89,17 @@ TEMPLATES = [
 WSGI_APPLICATION = 'equihire.wsgi.application'
 
 # Database
+# Use localhost when running outside Docker, 'postgres' when inside Docker
+DB_HOST = 'localhost' if os.getenv('DOCKER_CONTAINER', 'False').lower() != 'true' else 'postgres'
+
+# In settings.py, update the DATABASES setting:
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.getenv('POSTGRES_DB', 'equihire'),
         'USER': os.getenv('POSTGRES_USER', 'admin'),
         'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'admin123'),
-        'HOST': os.getenv('POSTGRES_HOST', 'postgres'),
+        'HOST': os.getenv('POSTGRES_HOST', 'localhost'),
         'PORT': os.getenv('POSTGRES_PORT', '5432'),
     }
 }
@@ -173,7 +187,10 @@ FAIRNESS_SERVICE_URL = os.getenv('FAIRNESS_SERVICE_URL', 'http://fairness_servic
 EXPLAINABILITY_SERVICE_URL = os.getenv('EXPLAINABILITY_SERVICE_URL', 'http://explainability_service:5004')
 
 # MinIO Configuration
-MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', 'minio:9000')
+# Use localhost when running outside Docker, 'minio' when inside Docker
+IS_RUNNING_IN_DOCKER = os.getenv('DOCKER_CONTAINER', 'False').lower() == 'true'
+MINIO_HOST = 'minio' if IS_RUNNING_IN_DOCKER else 'localhost'
+MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT', f'{MINIO_HOST}:9000')
 MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY', 'minioadmin')
 MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY', 'minioadmin')
 MINIO_BUCKET_NAME = os.getenv('MINIO_BUCKET_NAME', 'resumes')
@@ -188,26 +205,46 @@ LOGGING = {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
             'style': '{',
         },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
             'formatter': 'verbose',
         },
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'debug.log'),
+            'formatter': 'verbose',
+        },
     },
     'root': {
-        'handlers': ['console'],
-        'level': 'INFO',
+        'handlers': ['console', 'file'],
+        'level': 'DEBUG',
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
-            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'),
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
             'propagate': False,
         },
         'equihire': {
-            'handlers': ['console'],
-            'level': 'INFO',
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'candidates': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+        'minio': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
             'propagate': False,
         },
     },

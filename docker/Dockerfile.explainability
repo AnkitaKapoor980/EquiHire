@@ -1,26 +1,83 @@
+# Stage 1: Builder
+FROM python:3.11-slim as builder
+
+WORKDIR /app
+
+# Set build-time environment variables
+ENV \
+    # Python
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONFAULTHANDLER=1 \
+    # Pip
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=300 \
+    # Model
+    SENTENCE_TRANSFORMERS_HOME=/app/model_cache \
+    # Optimize build
+    MAKEFLAGS="-j$(nproc)" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONHASHSEED=0
+
+# Install only essential build dependencies with cleanup in same layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy only requirements first for better caching
+COPY backend/flask_services/explainability_service/requirements.txt .
+
+# Install PyTorch CPU with specific version and minimal dependencies first
+RUN pip install --no-cache-dir --no-deps torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
+
+# Install requirements in two steps to manage memory better
+RUN pip install --no-cache-dir -r requirements.txt --no-deps
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download the model during build with reduced memory usage
+RUN python -c "import os; os.environ['TOKENIZERS_PARALLELISM']='false'; from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', device='cpu')"
+
+# Final stage
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY backend/flask_services/explainability_service/requirements.txt .
+# Copy virtual environment and model cache
+COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /app/model_cache /app/model_cache
 
-ENV PIP_DEFAULT_TIMEOUT=120
+# Set environment variables
+ENV \
+    PATH="/opt/venv/bin:$PATH" \
+    SENTENCE_TRANSFORMERS_HOME="/app/model_cache" \
+    PYTHONUNBUFFERED="1"
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Create non-root user
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && chown -R appuser:appuser /app
 
 # Copy application code
-COPY backend/flask_services/explainability_service/app.py .
+COPY --chown=appuser:appuser backend/flask_services/explainability_service/app.py .
 
-# Expose port
-EXPOSE 5004
+# Switch to non-root user
+USER appuser
 
-# Run application
-CMD ["gunicorn", "--bind", "0.0.0.0:5004", "--workers", "2", "--timeout", "120", "app:app"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
 
+EXPOSE 5000
+
+# Use Gunicorn with optimized settings for CPU
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--worker-class", "sync", "--timeout", "120", "app:app"]

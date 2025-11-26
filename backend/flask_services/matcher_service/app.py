@@ -23,11 +23,18 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app)
 
-# Load lightweight Sentence-BERT model (paraphrase-MiniLM-L3-v2 is ~3x smaller than all-MiniLM-L6-v2)
-MODEL_NAME = 'sentence-transformers/paraphrase-MiniLM-L3-v2'
+# Load ultra-lightweight model with optimizations
+MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'  # Smaller and faster
 try:
-    model = SentenceTransformer(MODEL_NAME)
-    logger.info(f"Loaded lightweight Sentence-BERT model: {MODEL_NAME}")
+    # Optimize model loading with CPU-specific settings
+    model = SentenceTransformer(
+        MODEL_NAME,
+        device='cpu',
+        use_auth_token=False,
+        cache_folder='/tmp/models'  # Use tmpfs for faster access
+    )
+    model.max_seq_length = 128  # Reduce sequence length for faster processing
+    logger.info(f"Loaded optimized lightweight model: {MODEL_NAME}")
 except Exception as e:
     logger.error(f"Error loading model: {str(e)}")
     model = None

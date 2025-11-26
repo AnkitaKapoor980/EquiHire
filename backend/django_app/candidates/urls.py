@@ -12,7 +12,6 @@ urlpatterns = [
     # HTML views
     path('resumes/', resume_list_view, name='resume-list'),
     path('resumes/upload/', resume_upload_view, name='resume-upload'),
-    path('resumes/<int:pk>/download/', ResumeViewSet.as_view({'get': 'download'}), name='resume-download'),
     # Custom HTML view for API (handles array fields properly)
     path('api/resumes/html/', resume_api_html_view, name='resume-api-html'),
     # API views

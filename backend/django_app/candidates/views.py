@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect
+from django.http import StreamingHttpResponse
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from rest_framework import viewsets, status, generics
@@ -251,20 +252,6 @@ class ResumeViewSet(viewsets.ModelViewSet):
         except Exception as e:
             logger.error(f"Error calling matcher service: {str(e)}")
     
-    @action(detail=True, methods=['get'])
-    def download(self, request, pk=None):
-        """Get presigned URL for resume download."""
-        resume = self.get_object()
-        minio_service = MinIOService()
-        try:
-            url = minio_service.get_file_url(resume.file_path)
-            return Response({'download_url': url}, status=status.HTTP_200_OK)
-        except Exception as e:
-            logger.error(f"Error generating download URL: {str(e)}")
-            return Response(
-                {'error': str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
 
 
 class CandidateProfileViewSet(viewsets.ModelViewSet):
