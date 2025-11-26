@@ -159,26 +159,28 @@ pipeline {
                 
                 echo [INFO] Installing test dependencies and running tests...
                 
-                :: Print current directory and list files for debugging
-                echo [DEBUG] Current directory: %CD%
-                bat 'dir "%CD%/backend/django_app"'
+                // Debug: Print current directory and list files
+                bat "echo [DEBUG] Current directory: %CD%"
+                bat "dir \"%CD%\backend\django_app\""
                 
-                :: Run commands in the container with proper error handling
-                docker compose -p %COMPOSE_PROJECT_NAME% run --rm \
-                    -v "%CD%/test-results:/app/test-results" \
-                    -v "%CD%/backend/django_app:/app" \
-                    -w /app \
-                    django_app \
+                // Run tests in the container with proper error handling
+                bat """
+                docker compose -p %COMPOSE_PROJECT_NAME% run --rm ^
+                    -v "%CD%/test-results:/app/test-results" ^
+                    -v "%CD%/backend/django_app:/app" ^
+                    -w /app ^
+                    django_app ^
                     sh -c "
-                        echo '=== Current directory in container:' && pwd && \
-                        echo '=== Files in current directory:' && ls -la && \
-                        echo '=== Installing requirements...' && \
-                        pip install -r requirements.txt && \
-                        echo '=== Installing test dependencies...' && \
-                        pip install pytest pytest-django pytest-cov && \
-                        echo '=== Running tests...' && \
+                        echo '=== Current directory in container:' && pwd &&
+                        echo '=== Files in current directory:' && ls -la &&
+                        echo '=== Installing requirements...' &&
+                        pip install -r requirements.txt &&
+                        echo '=== Installing test dependencies...' &&
+                        pip install pytest pytest-django pytest-cov &&
+                        echo '=== Running tests...' &&
                         python -m pytest --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov tests/
                     "
+                """
                 
                 :: Verify test results were generated
                 if not exist "test-results/junit.xml" (
