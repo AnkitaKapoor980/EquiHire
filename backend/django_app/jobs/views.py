@@ -122,7 +122,7 @@ class JobDescriptionViewSet(viewsets.ModelViewSet):
     def match_candidates(self, request, pk=None):
         """Match candidates for a specific job."""
         job = self.get_object()
-        if not job.embedding:
+        if job.embedding is None:
             return Response(
                 {'error': 'Job embedding not available. Please wait for embedding generation.'},
                 status=status.HTTP_400_BAD_REQUEST

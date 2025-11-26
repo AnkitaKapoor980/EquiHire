@@ -17,6 +17,7 @@ blinker==1.6.2  # Required by Flask
 # Text processing
 joblib==1.3.2
 sentencepiece==0.1.99
+sentence-transformers>=2.3.0
 
 # Web server
 gunicorn==21.2.0

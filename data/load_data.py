@@ -211,20 +211,39 @@ def main():
     """Main function to load all data."""
     data_dir = Path(__file__).parent / 'raw'
     
+    # Check if data directory exists
+    if not data_dir.exists():
+        logger.warning(f"Data directory {data_dir} does not exist. Creating it...")
+        data_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("Data directory created. Please add CSV files to load data.")
+        return
+    
     conn = get_db_connection()
     
     try:
         # Load resumes
         resume_files = list(data_dir.glob('*resume*.csv'))
-        for resume_file in resume_files:
-            load_resumes(resume_file, conn)
+        if resume_files:
+            logger.info(f"Found {len(resume_files)} resume file(s)")
+            for resume_file in resume_files:
+                load_resumes(resume_file, conn)
+        else:
+            logger.info("No resume CSV files found in data/raw/. Skipping resume loading.")
         
         # Load jobs
         job_files = list(data_dir.glob('*job*.csv'))
-        for job_file in job_files:
-            load_jobs(job_file, conn)
+        if job_files:
+            logger.info(f"Found {len(job_files)} job file(s)")
+            for job_file in job_files:
+                load_jobs(job_file, conn)
+        else:
+            logger.info("No job CSV files found in data/raw/. Skipping job loading.")
         
-        logger.info("Data loading completed successfully")
+        if not resume_files and not job_files:
+            logger.warning("No data files found. Please add CSV files to data/raw/ directory.")
+            logger.info("Expected files: *resume*.csv and *job*.csv")
+        else:
+            logger.info("Data loading completed successfully")
         
     except Exception as e:
         logger.error(f"Error loading data: {str(e)}")

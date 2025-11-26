@@ -33,15 +33,10 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Copy only requirements first for better caching
 COPY backend/flask_services/explainability_service/requirements.txt .
 
-# Install PyTorch CPU with specific version and minimal dependencies first
-RUN pip install --no-cache-dir --no-deps torch==2.1.0 --index-url https://download.pytorch.org/whl/cpu
-
-# Install requirements in two steps to manage memory better
-RUN pip install --no-cache-dir -r requirements.txt --no-deps
+# Install requirements (PyTorch will be installed as a dependency of sentence-transformers)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download the model during build with reduced memory usage
-RUN python -c "import os; os.environ['TOKENIZERS_PARALLELISM']='false'; from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2', device='cpu')"
+# Note: Model will be downloaded at runtime on first use
 
 # Final stage
 FROM python:3.11-slim
@@ -53,9 +48,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy virtual environment and model cache
+# Copy virtual environment
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /app/model_cache /app/model_cache
+
+# Create model cache directory (models will be downloaded at runtime)
+RUN mkdir -p /app/model_cache
 
 # Set environment variables
 ENV \
@@ -75,9 +72,9 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:5000/health || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5004/health')" || exit 1
 
-EXPOSE 5000
+EXPOSE 5004
 
 # Use Gunicorn with optimized settings for CPU
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--worker-class", "sync", "--timeout", "120", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5004", "--workers", "1", "--worker-class", "sync", "--timeout", "120", "app:app"]

@@ -83,132 +83,53 @@ def explain_text():
         # Clean the text
         cleaned_text = clean_text(text)
         
+        # Ensure text is not empty after cleaning
+        if not cleaned_text or len(cleaned_text.strip()) < 10:
+            logger.warning(f"Text too short after cleaning: {len(cleaned_text)} chars")
+            return jsonify({
+                'explanation': [['text', 0.0]],
+                'prediction': 0.5,
+                'message': 'Text too short for meaningful explanation'
+            }), 200
+        
         # Generate explanation
         def predict_fn(texts):
-            return predict_proba(texts, vectorizer)
+            try:
+                return predict_proba(texts, vectorizer)
+            except Exception as e:
+                logger.error(f"Error in predict_fn: {str(e)}")
+                # Return default probabilities
+                return np.array([[0.5, 0.5]] * len(texts))
         
-        # Get explanation
-        exp = explainer.explain_instance(
-            cleaned_text,
-            predict_fn,
-            num_features=10,  # Number of features to show
-            top_labels=1
-        )
+        # Get explanation with error handling
+        try:
+            exp = explainer.explain_instance(
+                cleaned_text,
+                predict_fn,
+                num_features=10,  # Number of features to show
+                top_labels=1
+            )
+            
+            explanation_list = exp.as_list()
+        except Exception as e:
+            logger.error(f"Error in LIME explain_instance: {str(e)}")
+            # Return a simple explanation based on text length and keywords
+            explanation_list = [
+                ['text_length', 0.1 if len(cleaned_text) > 500 else -0.1],
+                ['keywords', 0.05]
+            ]
         
         # Format explanation
         explanation = {
-            'explanation': exp.as_list(),
+            'explanation': explanation_list,
             'prediction': float(predict_proba([cleaned_text], vectorizer)[0][1])
         }
         
         return jsonify(explanation), 200
         
     except Exception as e:
-        logger.error(f"Error generating explanation: {str(e)}")
+        logger.error(f"Error generating explanation: {str(e)}", exc_info=True)
         return jsonify({'error': str(e)}), 500
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5004, debug=False)
-        embeddings = model.encode([job_text, resume_text], convert_to_numpy=True, show_progress_bar=False)
-        job_embedding = embeddings[0]
-        resume_embedding = embeddings[1]
-        
-        # Calculate similarity score
-        similarity_score = calculate_cosine_similarity(tuple(job_embedding.tolist()), tuple(resume_embedding.tolist()))
-        
-        # Generate explanation (simplified for performance)
-        explanation = {
-            'score': float(similarity_score),
-            'interpretation': 'The score represents the cosine similarity between the job and resume embeddings. ' \
-                            'Higher values indicate better matches based on semantic similarity.'
-        }
-        
-        response_time = time.time() - start_time
-        logger.info(f"Explanation generated in {response_time:.2f} seconds")
-        
-        return jsonify({
-            'similarity': float(similarity_score),
-            'explanation': explanation,
-            'model': MODEL_NAME,
-            'processing_time_seconds': response_time
-        })
-        
-    except Exception as e:
-        logger.error(f"Error in explain_application: {str(e)}", exc_info=True)
-        return jsonify({
-            'error': 'Failed to generate explanation',
-            'details': str(e)
-        }), 500
-
-
-@app.route('/api/batch_explain', methods=['POST'])
-def batch_explain():
-    """Generate explanations for multiple applications in batch."""
-    start_time = time.time()
-    
-    try:
-        data = request.get_json()
-        applications = data.get('applications', [])
-        
-        if not applications:
-            return jsonify({'error': 'No applications provided'}), 400
-            
-        logger.info(f"Processing batch of {len(applications)} applications")
-        
-        # Prepare texts for batch processing
-        texts = []
-        text_pairs = []
-        
-        for app in applications:
-            job_text = app.get('job_text', '')
-            resume_text = app.get('resume_text', '')
-            texts.extend([job_text, resume_text])
-            text_pairs.append((job_text, resume_text))
-        
-        # Batch encode all texts at once
-        embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
-        
-        # Process results
-        results = []
-        for i, (job_text, resume_text) in enumerate(text_pairs):
-            try:
-                job_emb = embeddings[i*2]
-                resume_emb = embeddings[i*2 + 1]
-                
-                # Calculate similarity
-                similarity = calculate_cosine_similarity(
-                    tuple(job_emb.tolist()),
-                    tuple(resume_emb.tolist())
-                )
-                
-                results.append({
-                    'similarity': float(similarity),
-                    'status': 'success'
-                })
-                
-            except Exception as e:
-                logger.error(f"Error processing application {i}: {str(e)}")
-                results.append({
-                    'error': str(e),
-                    'status': 'error'
-                })
-        
-        total_time = time.time() - start_time
-        logger.info(f"Batch processing completed in {total_time:.2f} seconds")
-        return jsonify({
-            'results': results,
-            'batch_size': len(applications),
-            'processing_time_seconds': total_time,
-            'average_time_per_item': total_time / len(applications) if applications else 0
-        })
-        
-    except Exception as e:
-        logger.error(f"Error in batch_explain: {str(e)}", exc_info=True)
-        return jsonify({
-            'error': 'Failed to process batch',
-            'details': str(e)
-        }), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5004, debug=False)

@@ -132,6 +132,19 @@ class MinIOService:
             logger.error(f"Unexpected error in get_file_url: {str(e)}", exc_info=True)
             return None
         
+    def get_file(self, object_path):
+        """Get a file object from MinIO."""
+        try:
+            # Normalize the path
+            object_path = str(object_path).replace('%2F', '/').replace('\\', '/').lstrip('/')
+            
+            # Get object from MinIO
+            response = self.client.get_object(self.bucket_name, object_path)
+            return response
+        except S3Error as e:
+            logger.error(f"Error getting file from MinIO: {str(e)}")
+            raise
+    
     def delete_file(self, object_path):
         """Delete a file from MinIO."""
         try:

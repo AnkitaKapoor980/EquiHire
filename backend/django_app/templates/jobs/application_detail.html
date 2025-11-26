@@ -60,39 +60,78 @@
                 </div>
             </div>
             
-            {% if application.fairness_metrics %}
             <div class="card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-shield-check me-2"></i>Fairness Metrics</h5>
                 </div>
                 <div class="card-body">
+                    {% if application.fairness_metrics and application.fairness_metrics.disparate_impact_ratio %}
                     <div class="row">
-                        {% if application.fairness_metrics.disparate_impact_ratio %}
-                        <div class="col-md-6">
+                        <div class="col-md-6 mb-3">
                             <div class="fairness-metric">
                                 <div class="metric-label">Disparate Impact Ratio</div>
                                 <div class="metric-value">{{ application.fairness_metrics.disparate_impact_ratio|floatformat:2 }}</div>
-                                <span class="metric-status {{ application.fairness_metrics.is_fair|yesno:'fair,unfair' }}">
+                                <span class="badge bg-{{ application.fairness_metrics.is_fair|yesno:'success,danger' }}">
                                     {{ application.fairness_metrics.is_fair|yesno:'Fair,Unfair' }}
                                 </span>
                             </div>
                         </div>
+                        {% if application.fairness_metrics.demographic_parity_difference %}
+                        <div class="col-md-6 mb-3">
+                            <div class="fairness-metric">
+                                <div class="metric-label">Demographic Parity Difference</div>
+                                <div class="metric-value">{{ application.fairness_metrics.demographic_parity_difference|floatformat:3 }}</div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% if application.fairness_metrics.total_applications %}
+                        <div class="col-md-12">
+                            <small class="text-muted">Based on {{ application.fairness_metrics.total_applications }} application(s)</small>
+                        </div>
                         {% endif %}
                     </div>
+                    {% elif application.fairness_metrics and application.fairness_metrics.message %}
+                    <p class="text-muted">{{ application.fairness_metrics.message }}</p>
+                    {% else %}
+                    <p class="text-muted">Fairness metrics will be calculated when there are multiple applications for this job.</p>
+                    {% endif %}
                 </div>
             </div>
-            {% endif %}
             
-            {% if application.explanation %}
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-lightbulb me-2"></i>Explanation</h5>
                 </div>
                 <div class="card-body">
-                    <p>{{ application.explanation.explanation|default:"No explanation available" }}</p>
+                    {% if application.explanation %}
+                        {% if application.explanation.explanation %}
+                            <div class="explanation-content">
+                                <p><strong>Key Factors:</strong></p>
+                                <ul class="list-unstyled">
+                                    {% for item in application.explanation.explanation %}
+                                    <li class="mb-2">
+                                        <span class="badge bg-{{ item.1|floatformat:0|add:'0'|yesno:'success,danger,secondary' }}">
+                                            {{ item.0 }}
+                                        </span>
+                                        <span class="ms-2">{{ item.1|floatformat:3 }}</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% if application.explanation.prediction %}
+                                <p class="mt-3">
+                                    <strong>Prediction Score:</strong> 
+                                    <span class="badge bg-info">{{ application.explanation.prediction|floatformat:2 }}</span>
+                                </p>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <p class="text-muted">Explanation data is being processed.</p>
+                        {% endif %}
+                    {% else %}
+                        <p class="text-muted">No explanation available. Explanation will be generated when the application is processed.</p>
+                    {% endif %}
                 </div>
             </div>
-            {% endif %}
         </div>
         
         <div class="col-lg-4">

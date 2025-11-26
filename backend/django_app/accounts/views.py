@@ -37,7 +37,7 @@ def login_view_html(request):
         password = request.POST.get('password')
         user = authenticate(request, username=email, password=password)
         if user is not None:
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             if user.is_recruiter():
                 return redirect('dashboard:recruiter_dashboard')
             else:
@@ -83,7 +83,7 @@ def register_view_html(request):
                 last_name=last_name
             )
             # Log the user in immediately after registration
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, f'Welcome {user.first_name or user.email}! Your account has been created successfully.')
             if user.is_recruiter():
                 return redirect('dashboard:recruiter_dashboard')
@@ -101,7 +101,7 @@ def login_view(request):
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
-        login(request, user)
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         token, created = Token.objects.get_or_create(user=user)
         return Response({
             'user': UserSerializer(user).data,

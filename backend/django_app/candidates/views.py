@@ -45,6 +45,33 @@ def resume_api_html_view(request):
     })
 
 @login_required
+def resume_download_view(request, resume_id):
+    """Download a resume file from MinIO."""
+    try:
+        resume = Resume.objects.get(id=resume_id, candidate=request.user)
+        
+        # Get file from MinIO
+        minio_service = MinIOService()
+        file_obj = minio_service.get_file(resume.file_path)
+        
+        # Create streaming response
+        response = StreamingHttpResponse(
+            file_obj,
+            content_type=resume.file_type
+        )
+        response['Content-Disposition'] = f'attachment; filename="{resume.file_name}"'
+        response['Content-Length'] = resume.file_size
+        
+        return response
+    except Resume.DoesNotExist:
+        messages.error(request, 'Resume not found or you do not have permission to access it.')
+        return redirect('candidates:resume-list')
+    except Exception as e:
+        logger.error(f"Error downloading resume: {str(e)}")
+        messages.error(request, f'Error downloading resume: {str(e)}')
+        return redirect('candidates:resume-list')
+
+@login_required
 def resume_upload_view(request):
     """HTML view for resume upload."""
     if request.method == 'POST':

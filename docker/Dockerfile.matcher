@@ -16,12 +16,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PYTHONFAULTHANDLER=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/home/appuser/.cache/huggingface \
+    TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface \
+    SENTENCE_TRANSFORMERS_HOME=/home/appuser/.cache/huggingface
 
-# Create app user and model directory
+# Create app user and model directory with proper permissions
 RUN groupadd -r appuser && useradd -r -g appuser appuser \
-    && mkdir -p /tmp/models \
-    && chown -R appuser:appuser /app /tmp/models
+    && mkdir -p /tmp/models /home/appuser/.cache/huggingface \
+    && chown -R appuser:appuser /app /tmp/models /home/appuser/.cache
 
 # Copy only requirements first for better caching
 COPY --chown=appuser:appuser backend/flask_services/matcher_service/requirements.txt .

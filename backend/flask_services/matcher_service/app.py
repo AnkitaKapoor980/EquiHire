@@ -25,13 +25,17 @@ CORS(app)
 
 # Load ultra-lightweight model with optimizations
 MODEL_NAME = 'sentence-transformers/all-MiniLM-L6-v2'  # Smaller and faster
+
+# Set cache directory from environment or use default
+cache_dir = os.getenv('SENTENCE_TRANSFORMERS_HOME', '/home/appuser/.cache/huggingface')
+os.makedirs(cache_dir, exist_ok=True)
+
 try:
     # Optimize model loading with CPU-specific settings
     model = SentenceTransformer(
         MODEL_NAME,
         device='cpu',
-        use_auth_token=False,
-        cache_folder='/tmp/models'  # Use tmpfs for faster access
+        cache_folder=cache_dir
     )
     model.max_seq_length = 128  # Reduce sequence length for faster processing
     logger.info(f"Loaded optimized lightweight model: {MODEL_NAME}")

@@ -32,6 +32,16 @@ def recruiter_dashboard_view(request):
         job__posted_by=user
     ).select_related('job', 'resume', 'resume__candidate').order_by('-created_at')[:10]
     
+    # Process applications without scores (background processing)
+    from jobs.services import process_application
+    for app in recent_applications:
+        if app.score is None:
+            try:
+                process_application(app)
+                app.refresh_from_db()
+            except Exception as e:
+                logger.warning(f"Could not process application {app.id}: {str(e)}")
+    
     top_jobs = JobDescription.objects.filter(
         posted_by=user
     ).annotate(
@@ -125,6 +135,16 @@ def candidate_dashboard_view(request):
     recent_applications = Application.objects.filter(
         resume__candidate=user
     ).select_related('job', 'resume').order_by('-created_at')[:10]
+    
+    # Process applications without scores (background processing)
+    from jobs.services import process_application
+    for app in recent_applications:
+        if app.score is None:
+            try:
+                process_application(app)
+                app.refresh_from_db()
+            except Exception as e:
+                logger.warning(f"Could not process application {app.id}: {str(e)}")
     
     context = {
         'total_resumes': total_resumes,

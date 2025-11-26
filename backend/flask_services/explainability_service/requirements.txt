@@ -11,6 +11,7 @@ lime==0.2.0.1
 
 # Text processing
 sentencepiece==0.1.99
+sentence-transformers>=2.3.0
 
 # Database (keep if needed, remove if not used)
 psycopg2-binary==2.9.11
