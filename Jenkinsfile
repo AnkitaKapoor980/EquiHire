@@ -160,13 +160,13 @@ pipeline {
                 echo [INFO] Installing test dependencies and running tests...
                 docker compose -p %COMPOSE_PROJECT_NAME% run --rm \
                     -v "%CD%/test-results:/app/test-results" \
-                    -v "%CD%:/app" \
-                    -w /app/backend/django_app \
+                    -v "%CD%/backend/django_app:/app" \
+                    -w /app \
                     django_app \
                     bash -c "
-                        pip install -r /app/backend/django_app/requirements.txt && \
+                        pip install -r requirements.txt && \
                         pip install pytest pytest-django pytest-cov && \
-                        python -m pytest --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov tests/
+                        python -m pytest --junitxml=../test-results/junit.xml --cov=. --cov-report=xml:../test-results/coverage.xml --cov-report=html:../test-results/htmlcov tests/
                     "
                 
                 :: Verify test results were generated
