@@ -1,9 +1,9 @@
 pipeline {
     agent any
 
-    environment {
-        VENV = "${WORKSPACE}/.venv"
-    }
+environment {
+    VENV = "${WORKSPACE}\\.venv"
+}
 
     options {
         timestamps()
@@ -20,56 +20,60 @@ pipeline {
 
         stage('Build Docker Images') {
             steps {
-                sh 'docker compose build'
+                bat 'docker compose build'
             }
         }
 
         stage('Run Django Unit Tests') {
             steps {
-                sh '''
-                docker compose run --rm django_app bash -c "
-                    python manage.py migrate --noinput &&
-                    python manage.py test
-                "
-                '''
+                bat '''
+docker compose run --rm django_app bash -c "python manage.py migrate --noinput && python manage.py test"
+'''
             }
         }
 
         stage('Start Integration Stack') {
             steps {
-                sh 'docker compose up -d'
-                sh '''
-                echo "Waiting for Django API to become healthy..."
-                for i in {1..30}; do
-                    if curl -sf http://localhost:8000/api/health/ > /dev/null; then
-                        echo "Django API is healthy."
-                        exit 0
-                    fi
-                    sleep 5
-                done
-                echo "Django API failed to start in time." >&2
-                exit 1
-                '''
+                bat '''
+docker compose up -d
+SETLOCAL EnableDelayedExpansion
+SET /A COUNT=0
+:wait_loop
+IF !COUNT! GEQ 30 (
+    echo Django API failed to start in time.
+    EXIT /B 1
+)
+curl --silent --fail http://localhost:8000/api/health/ >NUL 2>&1
+IF !ERRORLEVEL! EQU 0 (
+    echo Django API is healthy.
+    EXIT /B 0
+)
+SET /A COUNT+=1
+timeout /t 5 >NUL
+GOTO wait_loop
+'''
             }
         }
 
         stage('Selenium Tests') {
             steps {
-                sh '''
-                python3 -m venv ${VENV}
-                . ${VENV}/bin/activate
-                pip install --upgrade pip
-                pip install -r tests/selenium/requirements.txt
-                pytest tests/selenium --base-url=http://localhost:8000 --maxfail=1 --disable-warnings
-                '''
+                bat """
+python -m venv "%VENV%"
+call "%VENV%\\Scripts\\activate"
+python -m pip install --upgrade pip
+pip install -r tests\\selenium\\requirements.txt
+pytest tests\\selenium --base-url=http://localhost:8000 --maxfail=1 --disable-warnings
+"""
             }
         }
     }
 
     post {
         always {
-            sh 'docker compose down -v || true'
-            sh 'rm -rf ${VENV} || true'
+            bat '''
+docker compose down -v
+IF EXIST "%VENV%" rmdir /s /q "%VENV%"
+'''
         }
     }
 }
