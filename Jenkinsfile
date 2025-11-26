@@ -148,6 +148,9 @@ pipeline {
                 goto check_postgres
                 
                 :db_ready
+                echo [INFO] Initializing database with pgvector extension...
+                docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py init_db
+                
                 echo [INFO] Running migrations...
                 docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py migrate
                 
