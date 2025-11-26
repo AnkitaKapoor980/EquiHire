@@ -170,8 +170,8 @@ pipeline {
                 
                 echo [INFO] Running tests in container...
                 docker compose -p %COMPOSE_PROJECT_NAME% run --rm ^
-                    -v "%CD%\test-results:/app/test-results" ^
-                    -v "%CD%\backend\django_app:/app" ^
+                    -v "%CD%/test-results:/app/test-results" ^
+                    -v "%CD%/backend/django_app:/app" ^
                     -w /app ^
                     django_app ^
                     sh -c "\
