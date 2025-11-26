@@ -1,30 +1,62 @@
-FROM python:3.11-slim
+FROM python:3.11-slim as builder
+
+# Set build arguments for pip cache
+ARG PIP_CACHE_DIR=/tmp/pip-cache
+ENV PIP_CACHE_DIR=$PIP_CACHE_DIR
 
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    postgresql-client \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# Create and activate virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy requirements first for better caching
 COPY backend/requirements.txt .
 
-ENV PIP_DEFAULT_TIMEOUT=120
-
-# Install Python dependencies
+# Install Python dependencies with cache
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy Django application
+# Final stage
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
+COPY --from=builder /app/requirements.txt .
 COPY backend/django_app/ .
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_DEFAULT_TIMEOUT=100 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
 
 # Collect static files
 RUN python manage.py collectstatic --noinput || true
 
 # Expose port
 EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/api/health/ || exit 1
 
 # Run migrations and start server
 CMD ["sh", "-c", "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"]

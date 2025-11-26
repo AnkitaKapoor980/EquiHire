@@ -50,35 +50,63 @@ pipeline {
 
         stage('Build Docker Images') {
             steps {
-                bat 'docker compose -p %COMPOSE_PROJECT_NAME% build --no-cache'
+                // Build with cache from previous builds if available
+                bat '''
+                @echo off
+                setlocal enabledelayedexpansion
+                
+                echo [INFO] Building Docker images with cache...
+                docker compose -p %COMPOSE_PROJECT_NAME% build --build-arg BUILDKIT_INLINE_CACHE=1
+                
+                if !ERRORLEVEL! NEQ 0 (
+                    echo [WARNING] Build with cache failed, retrying without cache...
+                    docker compose -p %COMPOSE_PROJECT_NAME% build --no-cache
+                )
+                
+                if !ERRORLEVEL! NEQ 0 (
+                    echo [ERROR] Failed to build Docker images
+                    exit /b 1
+                )
+                
+                endlocal
+                '''
             }
         }
 
         stage('Run Django Unit Tests') {
             steps {
                 bat '''
+                @echo off
                 setlocal enabledelayedexpansion
                 
                 echo [INFO] Starting database and running migrations...
-                docker compose -p %COMPOSE_PROJECT_NAME% up -d postgres
                 
-                :: Wait for PostgreSQL to be ready
+                :: Start PostgreSQL with health check
+                docker compose -p %COMPOSE_PROJECT_NAME% up -d --wait postgres
+                
+                :: Wait for PostgreSQL to be ready with retries
+                set MAX_RETRIES=30
+                set RETRY_DELAY=5
                 set COUNT=0
-                :db_wait_loop
-                docker compose -p %COMPOSE_PROJECT_NAME% exec -T postgres pg_isready -U admin
+                
+                :check_postgres
+                docker compose -p %COMPOSE_PROJECT_NAME% exec -T postgres pg_isready -U admin -h localhost -p 5432 -d equihire
                 if !ERRORLEVEL! EQU 0 (
                     echo [INFO] PostgreSQL is ready
                     goto db_ready
-                ) else (
-                    set /a COUNT+=1
-                    if !COUNT! GEQ 30 (
-                        echo [ERROR] PostgreSQL failed to start in time
-                        exit /b 1
-                    )
-                    echo [INFO] Waiting for PostgreSQL to be ready...
-                    timeout /t 5 >nul
-                    goto db_wait_loop
                 )
+                
+                set /a COUNT+=1
+                echo [INFO] Waiting for PostgreSQL to be ready... (!COUNT! of %MAX_RETRIES%)
+                
+                if !COUNT! GEQ %MAX_RETRIES% (
+                    echo [ERROR] PostgreSQL failed to start in time
+                    docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
+                    exit /b 1
+                )
+                
+                timeout /t %RETRY_DELAY% >nul
+                goto check_postgres
                 
                 :db_ready
                 
@@ -94,38 +122,52 @@ pipeline {
         stage('Start Integration Stack') {
             steps {
                 bat '''
+                @echo off
                 setlocal enabledelayedexpansion
                 
                 echo [INFO] Starting all services...
-                docker compose -p %COMPOSE_PROJECT_NAME% up -d
+                docker compose -p %COMPOSE_PROJECT_NAME% up -d --wait
                 
                 echo [INFO] Waiting for services to be healthy...
+                set MAX_RETRIES=30
+                set RETRY_DELAY=5
                 set COUNT=0
+                
                 :health_check_loop
+                set ALL_HEALTHY=1
                 
                 :: Check Django health
-                curl --silent --fail http://localhost:8000/api/health/ >nul 2>&1
-                set DJANGO_UP=!ERRORLEVEL!
+                curl --max-time 5 --silent --fail http://localhost:8000/api/health/ >nul 2>&1
+                if !ERRORLEVEL! NEQ 0 (
+                    echo [INFO] Django is not ready yet
+                    set ALL_HEALTHY=0
+                )
                 
                 :: Check MinIO health
-                curl --silent --fail http://localhost:9000/minio/health/live >nul 2>&1
-                set MINIO_UP=!ERRORLEVEL!
+                curl --max-time 5 --silent --fail http://localhost:9000/minio/health/live >nul 2>&1
+                if !ERRORLEVEL! NEQ 0 (
+                    echo [INFO] MinIO is not ready yet
+                    set ALL_HEALTHY=0
+                )
                 
-                if !DJANGO_UP! EQU 0 if !MINIO_UP! EQU 0 (
+                if !ALL_HEALTHY! EQU 1 (
                     echo [INFO] All services are healthy
                     exit /b 0
                 )
                 
                 set /a COUNT+=1
-                if !COUNT! GEQ 30 (
+                echo [INFO] Waiting for services to be ready... (!COUNT! of %MAX_RETRIES%)
+                
+                if !COUNT! GEQ %MAX_RETRIES% (
                     echo [ERROR] Services failed to start in time
+                    echo [ERROR] Current status:
                     docker compose -p %COMPOSE_PROJECT_NAME% ps
+                    echo [ERROR] Logs:
                     docker compose -p %COMPOSE_PROJECT_NAME% logs --tail=50
                     exit /b 1
                 )
                 
-                echo [INFO] Waiting for services to be ready...
-                timeout /t 5 >nul
+                timeout /t %RETRY_DELAY% >nul
                 goto health_check_loop
                 
                 endlocal
@@ -172,13 +214,11 @@ pipeline {
                 
                 echo [INFO] Stopping and removing containers...
                 docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "Failed to stop containers"
-                
                 echo [INFO] Removing any remaining containers...
-                for /f "tokens=*" %%i in ('docker ps -aq -f name=%COMPOSE_PROJECT_NAME%_*') do (
+                for /f "tokens=*" %%i in ('docker ps -aq --filter name=^/%COMPOSE_PROJECT_NAME%_') do (
                     echo [INFO] Removing container: %%i
                     docker rm -f %%i || echo "Failed to remove container: %%i"
                 )
-                
                 echo [INFO] Removing virtual environment...
                 if exist "%VENV%" rmdir /s /q "%VENV%"
                 
