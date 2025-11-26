@@ -124,7 +124,7 @@ pipeline {
                     "
                 
                 :: Copy test results to workspace
-                xcopy /s /y "test-results\*" "%WORKSPACE%\test-results\"
+                xcopy /s /y "test-results/*" "%WORKSPACE%/test-results/"
                 
                 endlocal
                 '''
