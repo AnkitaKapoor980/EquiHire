@@ -164,7 +164,7 @@ pipeline {
                 setlocal
                 
                 echo [INFO] Current directory: %CD%
-                dir "%CD%\backend\django_app"
+                dir "%CD%/backend/django_app"
                 
                 if not exist "test-results" mkdir test-results
                 
