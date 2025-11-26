@@ -160,8 +160,8 @@ pipeline {
                 echo [INFO] Installing test dependencies and running tests...
                 
                 // Debug: Print current directory and list files
-                bat "echo [DEBUG] Current directory: %CD%"
-                bat "dir \"%CD%\backend\django_app\""
+                bat 'echo [DEBUG] Current directory: %CD%'
+                bat 'dir "%CD%/backend/django_app"'
                 
                 // Run tests in the container with proper error handling
                 bat """
