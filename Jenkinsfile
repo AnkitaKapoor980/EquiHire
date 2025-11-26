@@ -164,7 +164,7 @@ pipeline {
                     -w /app/backend/django_app \
                     django_app \
                     bash -c "
-                        pip install -r /app/backend/requirements.txt && \
+                        pip install -r /app/backend/django_app/requirements.txt && \
                         pip install pytest pytest-django pytest-cov && \
                         python -m pytest --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov tests/
                     "
