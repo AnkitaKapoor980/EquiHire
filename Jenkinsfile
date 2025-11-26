@@ -142,14 +142,14 @@ pipeline {
                     "
                 
                 :: Verify test results were generated
-                if not exist "test-results\junit.xml" (
+                if not exist "test-results/junit.xml" (
                     echo [ERROR] Test results not generated
                     exit /b 1
                 )
                 
                 :: Copy test results to workspace
                 if not exist "%WORKSPACE%/test-results" mkdir "%WORKSPACE%/test-results"
-                xcopy /s /y "test-results\*" "%WORKSPACE%\test-results\"
+                xcopy /s /y "test-results/*" "%WORKSPACE%/test-results/"
                 
                 endlocal
                 '''
