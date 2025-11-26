@@ -31,11 +31,18 @@ pipeline {
                         docker rm -f %%i || echo "Failed to remove container: %%i"
                     )
                     
-                    echo [INFO] Checking for running containers using port 9000...
+                    echo [INFO] Checking for running containers using ports 9000 and 5432...
                     for /f "tokens=*" %%i in ('docker ps -q --filter "publish=9000"') do (
                         echo [INFO] Stopping container using port 9000: %%i
                         docker stop %%i || echo "Failed to stop container: %%i"
                     )
+                    for /f "tokens=*" %%i in ('docker ps -q --filter "publish=5432"') do (
+                        echo [INFO] Stopping container using port 5432: %%i
+                        docker stop %%i || echo "Failed to stop container: %%i"
+                    )
+                    
+                    :: Add a small delay to ensure ports are released
+                    ping -n 3 127.0.0.1 >nul
                     
                     echo [INFO] Removing any dangling networks...
                     for /f "tokens=*" %%i in ('docker network ls -q --filter "name=^%COMPOSE_PROJECT_NAME%_"') do (
@@ -93,15 +100,28 @@ pipeline {
                 
                 echo [INFO] Starting database and running migrations...
                 
-                :: Start services with health checks
-                docker compose -p %COMPOSE_PROJECT_NAME% up -d --wait postgres minio
+                :: Start services with health checks using custom ports to avoid conflicts
+                echo [INFO] Starting services with custom ports...
+                docker compose -p %COMPOSE_PROJECT_NAME% -f docker-compose.yaml -f docker-compose.ci.yaml up -d --wait postgres minio
                 
                 :: Check if postgres container is running
+                echo [INFO] Checking if PostgreSQL container is running...
                 docker compose -p %COMPOSE_PROJECT_NAME% ps --services --filter "status=running" | findstr /c:"postgres" >nul
                 if !ERRORLEVEL! NEQ 0 (
                     echo [ERROR] PostgreSQL container failed to start
                     docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
-                    exit /b 1
+                    
+                    echo [INFO] Checking for port conflicts...
+                    netstat -ano | findstr ":5432"
+                    
+                    echo [INFO] Trying to start PostgreSQL with force-recreate...
+                    docker compose -p %COMPOSE_PROJECT_NAME% up -d --force-recreate --wait postgres
+                    
+                    docker compose -p %COMPOSE_PROJECT_NAME% ps --services --filter "status=running" | findstr /c:"postgres" >nul
+                    if !ERRORLEVEL! NEQ 0 (
+                        echo [ERROR] PostgreSQL still not running after retry
+                        exit /b 1
+                    )
                 )
                 
                 :: Wait for PostgreSQL to be ready with retries
