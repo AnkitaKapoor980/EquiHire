@@ -4,6 +4,7 @@ pipeline {
     environment {
         VENV = "${WORKSPACE}\\.venv"
         COMPOSE_PROJECT_NAME = "equihire-${BUILD_NUMBER}"
+        PYTHONUNBUFFERED = "1"
     }
 
     options {
@@ -24,16 +25,21 @@ pipeline {
                     echo [INFO] Cleaning up any existing containers and networks...
                     docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "No existing containers to remove"
                     
-                    :: Remove any dangling containers and networks
-                    for /f "tokens=*" %%i in ('docker ps -aq -f name=equihire_*') do (
+                    echo [INFO] Removing any dangling containers...
+                    for /f "tokens=*" %%i in ('docker ps -aq -f "name=^%COMPOSE_PROJECT_NAME%_"') do (
                         echo [INFO] Removing container: %%i
                         docker rm -f %%i || echo "Failed to remove container: %%i"
                     )
                     
-                    for /f "tokens=*" %%i in ('docker network ls -q -f name=*equihire*') do (
+                    echo [INFO] Removing any dangling networks...
+                    for /f "tokens=*" %%i in ('docker network ls -q -f "name=^%COMPOSE_PROJECT_NAME%_"') do (
                         echo [INFO] Removing network: %%i
                         docker network rm %%i || echo "Failed to remove network: %%i"
                     )
+                    
+                    :: Clean up old test results
+                    if exist "test-results" rmdir /s /q test-results
+                    mkdir test-results
                     
                     endlocal
                     '''
@@ -81,8 +87,8 @@ pipeline {
                 
                 echo [INFO] Starting database and running migrations...
                 
-                :: Start PostgreSQL with health check
-                docker compose -p %COMPOSE_PROJECT_NAME% up -d --wait postgres
+                :: Start services with health checks
+                docker compose -p %COMPOSE_PROJECT_NAME% up -d --wait postgres minio
                 
                 :: Wait for PostgreSQL to be ready with retries
                 set MAX_RETRIES=30
@@ -97,25 +103,45 @@ pipeline {
                 )
                 
                 set /a COUNT+=1
-                echo [INFO] Waiting for PostgreSQL to be ready... (!COUNT! of %MAX_RETRIES%)
-                
-                if !COUNT! GEQ %MAX_RETRIES% (
+                if !COUNT! GTR %MAX_RETRIES% (
                     echo [ERROR] PostgreSQL failed to start in time
-                    docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
                     exit /b 1
                 )
                 
+                echo [INFO] Waiting for PostgreSQL to be ready... (!COUNT! of %MAX_RETRIES%)
                 timeout /t %RETRY_DELAY% >nul
                 goto check_postgres
                 
                 :db_ready
+                echo [INFO] Running migrations...
+                docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py migrate
                 
-                echo [INFO] Running Django tests...
-                docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app bash -c \
-                    "python manage.py migrate --noinput && python manage.py test --noinput"
+                echo [INFO] Running tests with coverage...
+                docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%\test-results:/app/test-results" django_app \
+                    bash -c "
+                        pip install pytest pytest-django pytest-cov && \
+                        python -m pytest --junitxml=test-results/junit.xml --cov=./ --cov-report=xml:test-results/coverage.xml --cov-report=html:test-results/htmlcov tests/
+                    "
+                
+                :: Copy test results to workspace
+                xcopy /s /y "test-results\*" "%WORKSPACE%\test-results\"
                 
                 endlocal
                 '''
+            }
+            post {
+                always {
+                    junit 'test-results/junit.xml'
+                    publishHTML(target: [
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'test-results/htmlcov',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report'
+                    ])
+                    archiveArtifacts artifacts: 'test-results/coverage.xml', allowEmptyArchive: true
+                }
             }
         }
 
