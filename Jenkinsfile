@@ -157,11 +157,14 @@ pipeline {
                 echo [INFO] Creating test-results directory...
                 if not exist "test-results" mkdir test-results
                 
+                echo [INFO] Installing test dependencies...
+                docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app pip install -r requirements.txt
+                
                 echo [INFO] Running tests with coverage...
                 docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%/test-results:/app/test-results" django_app \
                     bash -c "
                         pip install pytest pytest-django pytest-cov && \
-                        python -m pytest --junitxml=/app/test-results/junit.xml --cov=./ --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov tests/ || exit 0
+                        python -m pytest --junitxml=/app/test-results/junit.xml --cov=./ --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov tests/
                     "
                 
                 :: Verify test results were generated
