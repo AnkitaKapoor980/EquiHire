@@ -161,7 +161,7 @@ pipeline {
                 
                 :: Print current directory and list files for debugging
                 echo [DEBUG] Current directory: %CD%
-                bat 'dir "%CD%\backend\django_app"'
+                bat 'dir "%CD%/backend/django_app"'
                 
                 :: Run commands in the container with proper error handling
                 docker compose -p %COMPOSE_PROJECT_NAME% run --rm \
