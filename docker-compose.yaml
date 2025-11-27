@@ -10,10 +10,11 @@ services:
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin"]
+      test: ["CMD-SHELL", "pg_isready -U admin -h localhost -p 5432"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
     networks:
       - equihire_network
 
@@ -30,11 +31,112 @@ services:
       - "9001:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     networks:
       - equihire_network
+
+  parser_service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.parser
+    container_name: equihire_parser
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: equihire
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - equihire_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  matcher_service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.matcher
+    container_name: equihire_matcher
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: equihire
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - equihire_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  fairness_service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.fairness
+    container_name: equihire_fairness
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: equihire
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5003:5003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - equihire_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  explainability_service:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.explainability
+    container_name: equihire_explainability
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: equihire
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5004:5004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - equihire_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5004/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
 
   django_app:
     build:
@@ -44,6 +146,14 @@ services:
       postgres:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      parser_service:
+        condition: service_healthy
+      matcher_service:
+        condition: service_healthy
+      fairness_service:
+        condition: service_healthy
+      explainability_service:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://admin:admin123@postgres:5432/equihire
@@ -73,93 +183,10 @@ services:
       - equihire_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 3
-
-  parser_service:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.parser
-    container_name: equihire_parser
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: equihire
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-    ports:
-      - "5001:5001"
-    networks:
-      - equihire_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  matcher_service:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.matcher
-    container_name: equihire_matcher
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: equihire
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-    ports:
-      - "5002:5002"
-    networks:
-      - equihire_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  fairness_service:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.fairness
-    container_name: equihire_fairness
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: equihire
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-    ports:
-      - "5003:5003"
-    networks:
-      - equihire_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  explainability_service:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.explainability
-    container_name: equihire_explainability
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: equihire
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin123
-    ports:
-      - "5004:5004"
-    networks:
-      - equihire_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5004/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s
 
 volumes:
   postgres_data:
@@ -168,4 +195,3 @@ volumes:
 networks:
   equihire_network:
     driver: bridge
-
