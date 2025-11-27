@@ -55,15 +55,46 @@ def calculate_match_score(job, resume):
 
 
 def get_fairness_metrics(application):
-    """Get fairness metrics for an application."""
+    """
+    Get fairness metrics for an application with fallback to static analysis.
+    
+    Returns:
+        dict: Fairness metrics including bias detection results
+    """
+    # Fallback metrics in case the service is unavailable
+    FALLBACK_METRICS = {
+        'bias_detected': False,
+        'message': 'Using fallback fairness analysis - service unavailable',
+        'metrics': {
+            'statistical_parity_difference': 0.0,
+            'disparate_impact_ratio': 1.0,
+            'average_odds_difference': 0.0,
+            'equal_opportunity_difference': 0.0,
+            'analysis_quality': 'low',
+            'suggested_actions': [
+                'Fairness service is currently unavailable',
+                'Review applications manually for potential biases',
+                'Ensure diverse hiring panels are in place',
+                'Use structured interviews and evaluation criteria'
+            ]
+        },
+        'is_fallback': True
+    }
+    
     try:
+        # Check if fairness service is enabled
+        if not getattr(settings, 'FAIRNESS_SERVICE_ENABLED', True):
+            logger.info("Fairness service is disabled, using fallback metrics")
+            return FALLBACK_METRICS
+            
         # Get all applications for this job to calculate fairness
         from .models import Application
         job_applications = Application.objects.filter(job=application.job)
         
         if job_applications.count() < 2:
-            logger.info("Not enough applications for fairness analysis")
-            return {}
+            logger.info("Not enough applications for fairness analysis, using fallback")
+            FALLBACK_METRICS['message'] = 'Not enough applications for fairness analysis (minimum 2 required)'
+            return FALLBACK_METRICS
         
         # Prepare data for fairness service
         applications_data = []
@@ -72,68 +103,176 @@ def get_fairness_metrics(application):
                 'application_id': app.id,
                 'score': float(app.score) if app.score else 0.0,
                 'protected_attributes': {
-                    # Add protected attributes if available
-                    # For now, we'll use a placeholder
                     'gender': 'unknown',  # Would need to extract from resume
                     'age': None  # Would need to calculate from resume
                 }
             })
         
-        # Call fairness service
-        response = requests.post(
-            f"{settings.FAIRNESS_SERVICE_URL}/api/audit",
-            json={
-                'application_id': application.id,
-                'job_id': application.job.id,
-                'score': float(application.score) if application.score else 0.0
-            },
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            # The service returns {'success': True, 'metrics': {...}}
-            metrics = data.get('metrics', {})
-            # If there's a message (insufficient data), include it
-            if 'message' in data:
-                metrics['message'] = data.get('message')
-            return metrics
-        else:
-            logger.warning(f"Fairness service returned {response.status_code}")
-            return {}
+        # Call fairness service with timeout
+        try:
+            response = requests.post(
+                f"{settings.FAIRNESS_SERVICE_URL}/api/audit",
+                json={
+                    'application_id': application.id,
+                    'job_id': application.job.id,
+                    'score': float(application.score) if application.score else 0.0,
+                    'total_applications': job_applications.count()
+                },
+                timeout=5  # Shorter timeout for better responsiveness
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                # Validate response structure
+                if not isinstance(data, dict):
+                    logger.warning("Invalid response format from fairness service")
+                    return FALLBACK_METRICS
+                    
+                # Ensure we have at least some metrics
+                if 'metrics' not in data:
+                    data['metrics'] = {}
+                    
+                # Add fallback message if no metrics are available
+                if not data['metrics']:
+                    data['message'] = 'No fairness metrics available' + (
+                        f" - {data.get('message', '').lower()}" if data.get('message') else ''
+                    )
+                
+                return data
+                
+            else:
+                logger.warning(f"Fairness service returned {response.status_code}: {response.text}")
+                return FALLBACK_METRICS
+                
+        except requests.exceptions.Timeout:
+            logger.warning("Fairness service request timed out")
+            FALLBACK_METRICS['message'] = 'Fairness analysis timed out - using fallback metrics'
+            return FALLBACK_METRICS
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error calling fairness service: {str(e)}")
+            FALLBACK_METRICS['message'] = f'Fairness service error: {str(e)} - using fallback metrics'
+            return FALLBACK_METRICS
             
     except Exception as e:
-        logger.error(f"Error getting fairness metrics: {str(e)}")
-        return {}
+        logger.error(f"Error in get_fairness_metrics: {str(e)}", exc_info=True)
+        FALLBACK_METRICS['message'] = f'Unexpected error: {str(e)} - using fallback metrics'
+        return FALLBACK_METRICS
 
 
 def get_explanation(application):
-    """Get explanation for application score using explainability service."""
+    """
+    Get explanation for application score with fallback to rule-based explanation.
+    
+    Returns:
+        dict: Contains 'explanation' (list of explanation points) and 'prediction' (score)
+    """
+    # Fallback explanation in case the service is unavailable
+    FALLBACK_EXPLANATION = {
+        'explanation': [
+            'This is a fallback explanation because the explainability service is currently unavailable.',
+            'The match score is based on keyword matching and semantic similarity between the job requirements and resume content.',
+            'Key factors considered include: skills match, experience relevance, and education alignment with job requirements.',
+            'For a more detailed analysis, please try again later when the explainability service is available.'
+        ],
+        'prediction': float(application.score) if application.score else 0.0,
+        'is_fallback': True,
+        'confidence': 0.5,
+        'suggestions': [
+            'Review the resume for relevant experience and skills',
+            'Consider additional qualifications that might not be explicitly listed',
+            'Contact the candidate for clarification if needed'
+        ]
+    }
+    
     try:
-        # Prepare text for explanation
-        job_text = f"{application.job.title} {application.job.description} {application.job.requirements}"
-        resume_text = application.resume.raw_text or ' '.join(application.resume.skills)
+        # Check if explainability service is enabled
+        if not getattr(settings, 'EXPLAINABILITY_SERVICE_ENABLED', True):
+            logger.info("Explainability service is disabled, using fallback explanation")
+            return FALLBACK_EXPLANATION
+            
+        # Prepare text for explanation with basic validation
+        if not hasattr(application, 'job') or not application.job:
+            logger.warning("No job associated with application")
+            FALLBACK_EXPLANATION['explanation'].insert(0, 'No job information available for this application.')
+            return FALLBACK_EXPLANATION
+            
+        job_text = f"{application.job.title or ''} {application.job.description or ''} {application.job.requirements or ''}".strip()
+        if not job_text:
+            logger.warning("Empty job text for explanation")
+            FALLBACK_EXPLANATION['explanation'].insert(0, 'No job description available for analysis.')
+            return FALLBACK_EXPLANATION
+            
+        if not hasattr(application, 'resume') or not application.resume:
+            logger.warning("No resume associated with application")
+            FALLBACK_EXPLANATION['explanation'].insert(0, 'No resume information available for this application.')
+            return FALLBACK_EXPLANATION
+            
+        resume_text = application.resume.raw_text or ' '.join(getattr(application.resume, 'skills', []))
+        if not resume_text.strip():
+            logger.warning("Empty resume text for explanation")
+            FALLBACK_EXPLANATION['explanation'].insert(0, 'No resume content available for analysis.')
+            return FALLBACK_EXPLANATION
         
-        # Call explainability service
-        response = requests.post(
-            f"{settings.EXPLAINABILITY_SERVICE_URL}/explain",
-            json={
-                'text': f"Job: {job_text}\nResume: {resume_text}"
-            },
-            timeout=10
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            # Return the full response which includes 'explanation' list and 'prediction'
-            return data
-        else:
-            logger.warning(f"Explainability service returned {response.status_code}")
-            return {}
+        # Call explainability service with timeout
+        try:
+            response = requests.post(
+                f"{settings.EXPLAINABILITY_SERVICE_URL}/explain",
+                json={
+                    'text': f"Job: {job_text}\nResume: {resume_text}",
+                    'job_id': application.job.id if hasattr(application.job, 'id') else None,
+                    'resume_id': application.resume.id if hasattr(application.resume, 'id') else None,
+                    'score': float(application.score) if application.score else 0.0
+                },
+                timeout=5  # Shorter timeout for better responsiveness
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Validate response structure
+                if not isinstance(data, dict):
+                    logger.warning("Invalid response format from explainability service")
+                    return FALLBACK_EXPLANATION
+                    
+                # Ensure we have required fields
+                if 'explanation' not in data:
+                    data['explanation'] = FALLBACK_EXPLANATION['explanation']
+                    
+                if 'prediction' not in data:
+                    data['prediction'] = float(application.score) if application.score else 0.0
+                    
+                # Ensure explanation is a list
+                if not isinstance(data['explanation'], list):
+                    if isinstance(data['explanation'], str):
+                        data['explanation'] = [data['explanation']]
+                    else:
+                        data['explanation'] = FALLBACK_EXPLANATION['explanation']
+                
+                # Add fallback flag if not present
+                if 'is_fallback' not in data:
+                    data['is_fallback'] = False
+                    
+                return data
+                
+            else:
+                logger.warning(f"Explainability service returned {response.status_code}: {response.text}")
+                return FALLBACK_EXPLANATION
+                
+        except requests.exceptions.Timeout:
+            logger.warning("Explainability service request timed out")
+            FALLBACK_EXPLANATION['explanation'].insert(0, 'Explanation service timed out - showing fallback explanation.')
+            return FALLBACK_EXPLANATION
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error calling explainability service: {str(e)}")
+            FALLBACK_EXPLANATION['explanation'].insert(0, f'Explanation service error - {str(e)}')
+            return FALLBACK_EXPLANATION
             
     except Exception as e:
-        logger.error(f"Error getting explanation: {str(e)}")
-        return {}
+        logger.error(f"Error in get_explanation: {str(e)}", exc_info=True)
+        FALLBACK_EXPLANATION['explanation'].insert(0, f'Unexpected error: {str(e)}')
+        return FALLBACK_EXPLANATION
 
 
 def process_application(application):
