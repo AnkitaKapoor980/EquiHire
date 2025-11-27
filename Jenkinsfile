@@ -192,6 +192,18 @@ pipeline {
                         @echo off
                         setlocal enabledelayedexpansion
                         
+                        echo [INFO] Verifying workspace contents...
+                        echo [INFO] Current directory: %CD%
+                        if exist "tests" (
+                            echo [INFO] tests directory exists in workspace
+                            dir /b tests
+                        ) else (
+                            echo [ERROR] tests directory NOT found in workspace!
+                            echo [INFO] Listing workspace root:
+                            dir /b
+                            exit /b 1
+                        )
+                        
                         echo [INFO] Running tests in container...
                         echo [INFO] Installing test dependencies...
                         docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -w /app django_app /opt/venv/bin/pip install pytest pytest-django pytest-cov
@@ -201,9 +213,12 @@ pipeline {
                             exit /b 1
                         )
                         
-                        echo [INFO] Running pytest in container from /app directory...
-                        echo [INFO] Using absolute path /app/tests for pytest...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app /opt/venv/bin/python -m pytest /app/tests --junitxml=/app/test-results/junit.xml --cov=backend/django_app --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v
+                        echo [INFO] Verifying /app contents in container...
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -w /app django_app sh -c "echo 'Contents of /app:'; ls -la /app | head -30; echo ''; echo 'Checking for tests:'; if [ -d /app/tests ]; then echo 'tests directory EXISTS'; ls -la /app/tests; else echo 'tests directory NOT FOUND'; fi"
+                        
+                        echo [INFO] Running pytest in container...
+                        echo [INFO] Using pytest discovery from /app directory...
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app sh -c "cd /app && /opt/venv/bin/python -m pytest tests/ --junitxml=/app/test-results/junit.xml --cov=backend/django_app --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v"
                         
                         set TEST_EXIT_CODE=!ERRORLEVEL!
                         
