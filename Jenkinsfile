@@ -125,79 +125,126 @@ pipeline {
             }
         }
 
-        stage('Run Django Unit Tests') {
+        stage('Start Services') {
+            steps {
+                script {
+                    // Cleanup before starting services
+                    bat '''
+                    @echo off
+                    setlocal enabledelayedexpansion
+                    
+                    echo [INFO] Final cleanup before starting services...
+                    docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans 2>nul || echo "No existing containers"
+                    docker compose -p equihire down -v --remove-orphans 2>nul || echo "No default containers"
+                    
+                    :: Remove any containers using required ports
+                    for /f "tokens=*" %%i in ('docker ps -q --filter "publish=9000"') do docker rm -f %%i 2>nul
+                    for /f "tokens=*" %%i in ('docker ps -q --filter "publish=5432"') do docker rm -f %%i 2>nul
+                    
+                    echo [INFO] Starting all services...
+                    docker compose -p %COMPOSE_PROJECT_NAME% -f docker-compose.yaml up -d --build
+                    
+                    echo [INFO] Waiting for all services to be healthy...
+                    set MAX_RETRIES=30
+                    set RETRY_DELAY=5
+                    set COUNT=0
+                    
+                    :check_services
+                    set ALL_HEALTHY=1
+                    
+                    for %%s in (postgres minio django_app parser_service matcher_service fairness_service explainability_service) do (
+                        docker compose -p %COMPOSE_PROJECT_NAME% ps %%s | find "healthy" >nul
+                        if !ERRORLEVEL! NEQ 0 (
+                            echo [INFO] Service %%s is not yet healthy
+                            set ALL_HEALTHY=0
+                        ) else (
+                            echo [INFO] Service %%s is healthy
+                        )
+                    )
+                    
+                    if !ALL_HEALTHY! EQU 1 (
+                        echo [INFO] All services are healthy
+                        goto services_ready
+                    )
+                    
+                    set /a COUNT+=1
+                    if !COUNT! GTR %MAX_RETRIES% (
+                        echo [ERROR] Some services failed to become healthy in time
+                        docker compose -p %COMPOSE_PROJECT_NAME% ps
+                        docker compose -p %COMPOSE_PROJECT_NAME% logs
+                        exit /b 1
+                    )
+                    
+                    echo [INFO] Waiting for all services to be healthy... (!COUNT! of %MAX_RETRIES%)
+                    timeout /t %RETRY_DELAY% /nobreak >nul
+                    goto check_services
+                    
+                    :services_ready
+                    echo [INFO] All services are up and healthy
+                    
+                    echo [INFO] Initializing database with pgvector extension...
+                    docker compose -p %COMPOSE_PROJECT_NAME% exec -T django_app python manage.py init_db
+                    
+                    echo [INFO] Running migrations...
+                    docker compose -p %COMPOSE_PROJECT_NAME% exec -T django_app python manage.py migrate
+                    
+                    echo [INFO] Creating test-results directory...
+                    if not exist "test-results" mkdir test-results
+                    endlocal
+                    '''
+                }
+            }
+        }
+
+        stage('Run Tests') {
             steps {
                 script {
                     try {
-                        // Cleanup before starting services
+                        // Copy test files into the running container
                         bat '''
                         @echo off
                         setlocal enabledelayedexpansion
                         
-                        echo [INFO] Final cleanup before starting services...
-                        docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans 2>nul || echo "No existing containers"
-                        docker compose -p equihire down -v --remove-orphans 2>nul || echo "No default containers"
+                        echo [INFO] Copying test files to container...
+                        docker cp tests %COMPOSE_PROJECT_NAME%-django_app-1:/app/
+                        if exist pytest.ini docker cp pytest.ini %COMPOSE_PROJECT_NAME%-django_app-1:/app/
                         
-                        :: Remove any containers using required ports
-                        for /f "tokens=*" %%i in ('docker ps -q --filter "publish=9000"') do docker rm -f %%i 2>nul
-                        for /f "tokens=*" %%i in ('docker ps -q --filter "publish=5432"') do docker rm -f %%i 2>nul
+                        echo [INFO] Running tests in container...
+                        docker compose -p %COMPOSE_PROJECT_NAME% exec -T django_app sh -c "cd /app && python -m pytest tests/ --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v"
+                        
+                        echo [INFO] Copying test results back to host...
+                        docker cp %COMPOSE_PROJECT_NAME%-django_app-1:/app/test-results/ test-results/
                         
                         endlocal
                         '''
-                        
-                        // Start services
+                    } catch (Exception e) {
+                        echo "[ERROR] Test execution failed: ${e.message}"
+                        currentBuild.result = 'FAILURE'
+                        throw e
+                    } finally {
+                        // Always copy test results, even if tests fail
                         bat '''
                         @echo off
                         setlocal enabledelayedexpansion
                         
-                        echo [INFO] Starting database and running migrations...
-                        docker compose -p %COMPOSE_PROJECT_NAME% -f docker-compose.yaml up -d --wait postgres minio
-                        
-                        echo [INFO] Waiting for PostgreSQL to be ready...
-                        set MAX_RETRIES=30
-                        set RETRY_DELAY=5
-                        set COUNT=0
-                        
-                        :check_postgres
-                        docker compose -p %COMPOSE_PROJECT_NAME% exec -T postgres pg_isready -U admin -h localhost -p 5432 -d equihire
-                        if !ERRORLEVEL! EQU 0 (
-                            echo [INFO] PostgreSQL is ready
-                            goto db_ready
+                        echo [INFO] Ensuring test results are copied...
+                        if exist "%COMPOSE_PROJECT_NAME%-django_app-1" (
+                            docker cp %COMPOSE_PROJECT_NAME%-django_app-1:/app/test-results/ test-results/ 2>nul || echo "No test results to copy"
                         )
                         
-                        set /a COUNT+=1
-                        if !COUNT! GTR %MAX_RETRIES% (
-                            echo [ERROR] PostgreSQL failed to start in time
-                            docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
-                            exit /b 1
-                        )
-                        
-                        echo [INFO] Waiting for PostgreSQL to be ready... (!COUNT! of %MAX_RETRIES%)
-                        timeout /t %RETRY_DELAY% /nobreak >nul
-                        goto check_postgres
-                        
-                        :db_ready
-                        echo [INFO] Initializing database with pgvector extension...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py init_db
-                        
-                        echo [INFO] Running migrations...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py migrate
-                        
-                        echo [INFO] Creating test-results directory...
-                        if not exist "test-results" mkdir test-results
-                        '''
-                        
-                        // Run tests
-                        bat '''
-                        @echo off
-                        setlocal enabledelayedexpansion
-                        
-                        echo [INFO] Verifying workspace contents...
-                        echo [INFO] Current directory: %CD%
-                        if exist "tests" (
-                            echo [INFO] tests directory exists in workspace
-                            dir /b tests
+                        echo [INFO] Test results directory contents:
+                        if exist "test-results" (
+                            dir /s /b test-results
                         ) else (
+                            echo No test results directory found
+                        )
+                        
+                        endlocal
+                        '''
+                    }
+                }
+            }
+        }
                             echo [ERROR] tests directory NOT found in workspace!
                             echo [INFO] Listing workspace root:
                             dir /b
