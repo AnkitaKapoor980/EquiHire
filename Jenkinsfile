@@ -202,7 +202,8 @@ pipeline {
                         )
                         
                         echo [INFO] Running pytest in container from /app directory...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app /opt/venv/bin/python -m pytest tests/ --junitxml=/app/test-results/junit.xml --cov=backend/django_app --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v
+                        echo [INFO] Using absolute path /app/tests for pytest...
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app /opt/venv/bin/python -m pytest /app/tests --junitxml=/app/test-results/junit.xml --cov=backend/django_app --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v
                         
                         set TEST_EXIT_CODE=!ERRORLEVEL!
                         
