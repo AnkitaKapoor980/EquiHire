@@ -206,7 +206,7 @@ pipeline {
                         
                         echo [INFO] Running tests in container...
                         echo [INFO] Installing test dependencies...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -w /app django_app /opt/venv/bin/pip install pytest pytest-django pytest-cov
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app /opt/venv/bin/pip install pytest pytest-django pytest-cov
                         
                         if !ERRORLEVEL! NEQ 0 (
                             echo [ERROR] Failed to install test dependencies
@@ -214,11 +214,11 @@ pipeline {
                         )
                         
                         echo [INFO] Verifying /app contents in container...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -w /app django_app sh -c "echo 'Contents of /app:'; ls -la /app | head -30; echo ''; echo 'Checking for tests:'; if [ -d /app/tests ]; then echo 'tests directory EXISTS'; ls -la /app/tests; else echo 'tests directory NOT FOUND'; fi"
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/workspace" -w /app django_app sh -c "echo 'Contents of /app:'; ls -la /app | head -30; echo ''; echo 'Contents of /workspace:'; ls -la /workspace | head -30; echo ''; echo 'Checking for tests in workspace:'; if [ -d /workspace/tests ]; then echo 'tests directory EXISTS in workspace'; ls -la /workspace/tests; else echo 'tests directory NOT FOUND in workspace'; fi"
                         
                         echo [INFO] Running pytest in container...
-                        echo [INFO] Using pytest discovery from /app directory...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app sh -c "cd /app && /opt/venv/bin/python -m pytest tests/ --junitxml=/app/test-results/junit.xml --cov=backend/django_app --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v"
+                        echo [INFO] Copying tests from workspace and running pytest...
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/workspace" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app sh -c "cp -r /workspace/tests /app/ && if [ -f /workspace/pytest.ini ]; then cp /workspace/pytest.ini /app/; fi && echo 'Tests copied successfully' && ls -la /app/tests && /opt/venv/bin/python -m pytest tests/ --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v"
                         
                         set TEST_EXIT_CODE=!ERRORLEVEL!
                         
