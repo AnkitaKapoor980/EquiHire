@@ -169,28 +169,32 @@ pipeline {
                 if not exist "test-results" mkdir test-results
                 
                 echo [INFO] Running tests in container...
-                echo [INFO] Checking for test files...
+                
+                :: Check if tests directory exists
                 if not exist "tests" (
                     echo [ERROR] Tests directory not found at %CD%\tests
                     exit /b 1
                 )
                 
-                echo [INFO] Running tests in container...
+                :: Create test-results directory if it doesn't exist
+                if not exist "test-results" mkdir test-results
+                
+                :: Run tests in container
                 docker compose -p %COMPOSE_PROJECT_NAME% run --rm ^
-                    -v "%CD%/test-results:/app/test-results" ^
                     -v "%CD%:/app" ^
+                    -v "%CD%/test-results:/app/test-results" ^
                     -w /app ^
                     django_app ^
-                    sh -c "\
-                        echo '=== Current directory in container:' && pwd && \
-                        echo '=== Files in current directory:' && ls -la && \
-                        echo '=== Installing requirements...' && \
-                        pip install -r backend/requirements.txt && \
-                        echo '=== Installing test dependencies...' && \
-                        pip install pytest pytest-django pytest-cov && \
-                        echo '=== Running tests...' && \
-                        python -m pytest /app/tests --junitxml=/app/test-results/junit.xml --cov=backend/django_app --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov
-                    "
+                    sh -c "^"^
+                        echo '=== Current directory in container:' ^&^& pwd ^&^& ^
+                        echo '=== Files in current directory:' ^&^& ls -la ^&^& ^
+                        echo '=== Installing requirements...' ^&^& ^
+                        pip install -r requirements.txt ^&^& ^
+                        echo '=== Installing test dependencies...' ^&^& ^
+                        pip install pytest pytest-django pytest-cov ^&^& ^
+                        echo '=== Running tests...' ^&^& ^
+                        python -m pytest /app/tests --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov
+                    """
                 
                 if not exist "test-results\\junit.xml" (
                     echo [WARNING] No test results found at test-results/junit.xml
