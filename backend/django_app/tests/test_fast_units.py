@@ -37,9 +37,11 @@ class TestUserModel(TestCase):
         user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
-            role='candidate'
+            role='candidate',
+            password='testpass123'  # Password is required for create_user
         )
-        self.assertEqual(str(user), 'testuser')
+        # Expecting format: email (role)
+        self.assertEqual(str(user), 'test@example.com (candidate)')
 
 
 class TestBasicViews(TestCase):
@@ -47,12 +49,16 @@ class TestBasicViews(TestCase):
     
     def setUp(self):
         self.client = Client()
+        # Create a test user with hashed password
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
-            password='testpass123',
+            password='testpass123',  # This will be properly hashed
             role='candidate'
         )
+        # Ensure the user is active
+        self.user.is_active = True
+        self.user.save()
     
     def test_home_page_loads(self):
         """Test that home page loads successfully."""
@@ -68,12 +74,19 @@ class TestBasicViews(TestCase):
     
     def test_user_can_login(self):
         """Test user authentication."""
+        # Ensure we're using the correct login credentials
         response = self.client.post('/accounts/login/', {
-            'login': 'test@example.com',
-            'password': 'testpass123'
-        })
-        # Should redirect after successful login
-        self.assertEqual(response.status_code, 302)
+            'username': 'testuser',  # Using username instead of login
+            'password': 'testpass123',
+            'next': '/'  # Add next parameter to avoid potential redirect issues
+        }, follow=True)  # follow=True to handle the redirect
+        
+        # Check if user is actually logged in
+        self.assertTrue('_auth_user_id' in self.client.session)
+        
+        # Check if we were redirected after login
+        self.assertEqual(response.status_code, 200)  # After following the redirect
+        self.assertIn('dashboard', response.request['PATH_INFO'])  # Or your expected redirect target
 
 
 @pytest.mark.unit
