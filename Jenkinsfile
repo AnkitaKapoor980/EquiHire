@@ -190,28 +190,41 @@ pipeline {
                         // Run tests
                         bat '''
                         @echo off
-                        setlocal enabledelayedprogress
+                        setlocal enabledelayedexpansion
                         
                         echo [INFO] Running tests in container...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm ^
-                            -v "%CD%:/app" ^
-                            -v "%CD%/test-results:/app/test-results" ^
-                            -w /app/backend/django_app ^
-                            django_app ^
-                            sh -c "pip install pytest pytest-django pytest-cov && ^
-                                  python -m pytest /app/backend/django_app/tests ^
-                                    --junitxml=/app/test-results/junit.xml ^
-                                    --cov=. ^
-                                    --cov-report=xml:/app/test-results/coverage.xml ^
-                                    --cov-report=html:/app/test-results/htmlcov"
+                        echo [INFO] Installing test dependencies...
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -w /app django_app /opt/venv/bin/pip install pytest pytest-django pytest-cov
                         
-                        if not exist "test-results\\junit.xml" (
-                            echo [ERROR] No test results found at test-results/junit.xml
-                            dir /s /b test-results
+                        if !ERRORLEVEL! NEQ 0 (
+                            echo [ERROR] Failed to install test dependencies
                             exit /b 1
                         )
                         
-                        echo [INFO] Test execution completed successfully
+                        echo [INFO] Running pytest in container from /app directory...
+                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/app" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app /opt/venv/bin/python -m pytest tests/ --junitxml=/app/test-results/junit.xml --cov=backend/django_app --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v
+                        
+                        set TEST_EXIT_CODE=!ERRORLEVEL!
+                        
+                        echo [INFO] Test command exited with code !TEST_EXIT_CODE!
+                        
+                        if not exist "test-results\\junit.xml" (
+                            echo [ERROR] No test results found at test-results/junit.xml
+                            if exist "test-results" (
+                                echo [INFO] Contents of test-results directory:
+                                dir /b test-results
+                            ) else (
+                                echo [INFO] test-results directory does not exist
+                            )
+                            if !TEST_EXIT_CODE! EQU 0 (
+                                exit /b 1
+                            )
+                        )
+                        
+                        echo [INFO] Test execution completed
+                        if !TEST_EXIT_CODE! NEQ 0 (
+                            exit /b !TEST_EXIT_CODE!
+                        )
                         '''
                         
                         // Publish test results
@@ -239,7 +252,7 @@ pipeline {
                     try {
                         bat '''
                         @echo off
-                        setlocal enabledelayedprogress
+                        setlocal enabledelayedexpansion
                         
                         echo [INFO] Starting integration stack...
                         docker compose -p %COMPOSE_PROJECT_NAME% up -d
@@ -266,7 +279,7 @@ pipeline {
                 script {
                     bat '''
                     @echo off
-                    setlocal
+                    setlocal enabledelayedexpansion
                     
                     echo [INFO] Setting up Python virtual environment...
                     python -m venv "%VENV%"
