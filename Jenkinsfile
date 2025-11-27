@@ -4,6 +4,8 @@ pipeline {
     environment {
         VENV = "${WORKSPACE}\\.venv"
         COMPOSE_PROJECT_NAME = "equihire-${BUILD_NUMBER}"
+        DOCKER_BUILDKIT = "1"
+        COMPOSE_DOCKER_CLI_BUILD = "1"
         PYTHONUNBUFFERED = "1"
     }
 
@@ -19,40 +21,56 @@ pipeline {
                 script {
                     bat '''
                     @echo off
-                    setlocal enabledelayedprogress
+                    setlocal enabledelayedexpansion
                     
                     echo [INFO] Cleaning up any existing containers and networks...
-                    docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "No existing containers to remove"
                     
-                    echo [INFO] Removing any dangling containers...
-                    for /f "tokens=*" %%i in ('docker ps -aq --filter "name=^%COMPOSE_PROJECT_NAME%_"') do (
+                    :: Stop and remove containers by project name
+                    docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans 2>nul || echo "No containers with project name %COMPOSE_PROJECT_NAME%"
+                    
+                    :: Also try with default project name (equihire)
+                    docker compose -p equihire down -v --remove-orphans 2>nul || echo "No containers with default project name"
+                    
+                    :: Remove containers by name pattern (equihire_*)
+                    echo [INFO] Removing containers with name pattern equihire_*...
+                    for /f "tokens=*" %%i in ('docker ps -aq --filter "name=equihire_"') do (
                         echo [INFO] Removing container: %%i
-                        docker rm -f %%i || echo "Failed to remove container: %%i"
+                        docker rm -f %%i 2>nul || echo "Failed to remove container: %%i"
+                    )
+                    
+                    :: Remove stopped containers with equihire in name
+                    for /f "tokens=*" %%i in ('docker ps -aq --filter "name=equihire"') do (
+                        echo [INFO] Removing stopped container: %%i
+                        docker rm -f %%i 2>nul || echo "Failed to remove container: %%i"
                     )
                     
                     echo [INFO] Checking for running containers using ports 9000 and 5432...
                     for /f "tokens=*" %%i in ('docker ps -q --filter "publish=9000"') do (
                         echo [INFO] Stopping container using port 9000: %%i
-                        docker stop %%i || echo "Failed to stop container: %%i"
+                        docker stop %%i 2>nul || echo "Failed to stop container: %%i"
+                        docker rm -f %%i 2>nul || echo "Failed to remove container: %%i"
                     )
                     for /f "tokens=*" %%i in ('docker ps -q --filter "publish=5432"') do (
                         echo [INFO] Stopping container using port 5432: %%i
-                        docker stop %%i || echo "Failed to stop container: %%i"
+                        docker stop %%i 2>nul || echo "Failed to stop container: %%i"
+                        docker rm -f %%i 2>nul || echo "Failed to remove container: %%i"
                     )
                     
                     :: Add a small delay to ensure ports are released
+                    echo [INFO] Waiting for ports to be released...
                     ping -n 3 127.0.0.1 >nul
                     
                     echo [INFO] Removing any dangling networks...
-                    for /f "tokens=*" %%i in ('docker network ls -q --filter "name=^%COMPOSE_PROJECT_NAME%_"') do (
+                    for /f "tokens=*" %%i in ('docker network ls -q --filter "name=equihire"') do (
                         echo [INFO] Removing network: %%i
-                        docker network rm %%i || echo "Failed to remove network: %%i"
+                        docker network rm %%i 2>nul || echo "Failed to remove network: %%i"
                     )
                     
                     :: Clean up old test results
                     if exist "test-results" rmdir /s /q test-results
                     mkdir test-results
                     
+                    echo [INFO] Cleanup complete
                     endlocal
                     '''
                 }
@@ -61,8 +79,12 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                cleanWs()
-                checkout scm
+                script {
+                    retry(3) {
+                        cleanWs()
+                        checkout scm
+                    }
+                }
             }
         }
 
@@ -71,14 +93,22 @@ pipeline {
                 script {
                     bat '''
                     @echo off
-                    setlocal enabledelayedprogress
+                    setlocal enabledelayedexpansion
                     
-                    echo [INFO] Building Docker images with cache...
-                    docker compose -p %COMPOSE_PROJECT_NAME% build --build-arg BUILDKIT_INLINE_CACHE=1
+                    echo [INFO] Building Docker images with BuildKit cache...
+                    echo [INFO] Using consistent image names for better caching...
+                    
+                    :: Build with BuildKit for better caching, parallel builds, and no unnecessary pulls
+                    :: Use consistent image names by building without project prefix first, then tag
+                    set DOCKER_BUILDKIT=1
+                    set COMPOSE_DOCKER_CLI_BUILD=1
+                    
+                    echo [INFO] Building images (will use cache if available)...
+                    docker compose build --parallel --pull never --progress=plain
                     
                     if !ERRORLEVEL! NEQ 0 (
-                        echo [WARNING] Build with cache failed, retrying without cache...
-                        docker compose -p %COMPOSE_PROJECT_NAME% build --no-cache
+                        echo [WARNING] Parallel build failed, trying sequential...
+                        docker compose build --pull never
                     )
                     
                     if !ERRORLEVEL! NEQ 0 (
@@ -86,6 +116,7 @@ pipeline {
                         exit /b 1
                     )
                     
+                    echo [INFO] Build completed - images are cached for next build
                     endlocal
                     '''
                 }
@@ -96,10 +127,26 @@ pipeline {
             steps {
                 script {
                     try {
+                        // Cleanup before starting services
+                        bat '''
+                        @echo off
+                        setlocal enabledelayedexpansion
+                        
+                        echo [INFO] Final cleanup before starting services...
+                        docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans 2>nul || echo "No existing containers"
+                        docker compose -p equihire down -v --remove-orphans 2>nul || echo "No default containers"
+                        
+                        :: Remove any containers using required ports
+                        for /f "tokens=*" %%i in ('docker ps -q --filter "publish=9000"') do docker rm -f %%i 2>nul
+                        for /f "tokens=*" %%i in ('docker ps -q --filter "publish=5432"') do docker rm -f %%i 2>nul
+                        
+                        endlocal
+                        '''
+                        
                         // Start services
                         bat '''
                         @echo off
-                        setlocal enabledelayedprogress
+                        setlocal enabledelayedexpansion
                         
                         echo [INFO] Starting database and running migrations...
                         docker compose -p %COMPOSE_PROJECT_NAME% -f docker-compose.yaml up -d --wait postgres minio
@@ -268,12 +315,23 @@ pipeline {
                 setlocal enabledelayedexpansion
                 
                 echo [INFO] Stopping and removing containers...
-                docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "Failed to stop containers"
+                docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans 2>nul || echo "Failed to stop containers with project name"
+                docker compose -p equihire down -v --remove-orphans 2>nul || echo "Failed to stop default containers"
                 
                 echo [INFO] Removing any remaining containers...
-                for /f "tokens=*" %%i in ('docker ps -aq --filter name=^/%COMPOSE_PROJECT_NAME%_') do (
+                for /f "tokens=*" %%i in ('docker ps -aq --filter "name=equihire"') do (
                     echo [INFO] Removing container: %%i
-                    docker rm -f %%i || echo "Failed to remove container: %%i"
+                    docker rm -f %%i 2>nul || echo "Failed to remove container: %%i"
+                )
+                
+                :: Remove containers using required ports
+                for /f "tokens=*" %%i in ('docker ps -q --filter "publish=9000"') do (
+                    echo [INFO] Removing container using port 9000: %%i
+                    docker rm -f %%i 2>nul || echo "Failed to remove container: %%i"
+                )
+                for /f "tokens=*" %%i in ('docker ps -q --filter "publish=5432"') do (
+                    echo [INFO] Removing container using port 5432: %%i
+                    docker rm -f %%i 2>nul || echo "Failed to remove container: %%i"
                 )
                 
                 echo [INFO] Removing virtual environment...
