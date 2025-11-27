@@ -2,7 +2,7 @@
 
 A production-ready ATS (Applicant Tracking System) with AI-powered resume screening, fairness auditing, and explainability features.
 
-## Features
+## Features:
 
 - **Resume Parsing**: Extract structured data from PDF/DOCX resumes using PyMuPDF and spaCy
 - **Intelligent Matching**: Sentence-BERT embeddings with cosine similarity for resume-job matching
