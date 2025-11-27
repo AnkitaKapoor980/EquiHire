@@ -17,10 +17,9 @@ pipeline {
         stage('Cleanup') {
             steps {
                 script {
-                    // Clean up any existing containers and networks
                     bat '''
                     @echo off
-                    setlocal enabledelayedexpansion
+                    setlocal enabledelayedprogress
                     
                     echo [INFO] Cleaning up any existing containers and networks...
                     docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "No existing containers to remove"
@@ -69,26 +68,27 @@ pipeline {
 
         stage('Build Docker Images') {
             steps {
-                // Build with cache from previous builds if available
-                bat '''
-                @echo off
-                setlocal enabledelayedexpansion
-                
-                echo [INFO] Building Docker images with cache...
-                docker compose -p %COMPOSE_PROJECT_NAME% build --build-arg BUILDKIT_INLINE_CACHE=1
-                
-                if !ERRORLEVEL! NEQ 0 (
-                    echo [WARNING] Build with cache failed, retrying without cache...
-                    docker compose -p %COMPOSE_PROJECT_NAME% build --no-cache
-                )
-                
-                if !ERRORLEVEL! NEQ 0 (
-                    echo [ERROR] Failed to build Docker images
-                    exit /b 1
-                )
-                
-                endlocal
-                '''
+                script {
+                    bat '''
+                    @echo off
+                    setlocal enabledelayedprogress
+                    
+                    echo [INFO] Building Docker images with cache...
+                    docker compose -p %COMPOSE_PROJECT_NAME% build --build-arg BUILDKIT_INLINE_CACHE=1
+                    
+                    if !ERRORLEVEL! NEQ 0 (
+                        echo [WARNING] Build with cache failed, retrying without cache...
+                        docker compose -p %COMPOSE_PROJECT_NAME% build --no-cache
+                    )
+                    
+                    if !ERRORLEVEL! NEQ 0 (
+                        echo [ERROR] Failed to build Docker images
+                        exit /b 1
+                    )
+                    
+                    endlocal
+                    '''
+                }
             }
         }
 
@@ -99,7 +99,7 @@ pipeline {
                         // Start services
                         bat '''
                         @echo off
-                        setlocal enabledelayedexpansion
+                        setlocal enabledelayedprogress
                         
                         echo [INFO] Starting database and running migrations...
                         docker compose -p %COMPOSE_PROJECT_NAME% -f docker-compose.yaml up -d --wait postgres minio
@@ -141,7 +141,7 @@ pipeline {
                         // Run tests
                         bat '''
                         @echo off
-                        setlocal enabledelayedexpansion
+                        setlocal enabledelayedprogress
                         
                         echo [INFO] Running tests in container...
                         docker compose -p %COMPOSE_PROJECT_NAME% run --rm ^
@@ -176,31 +176,9 @@ pipeline {
                         // Cleanup
                         bat '''
                         @echo off
-                        echo [INFO] Cleaning up...
-                        docker compose -p %COMPOSE_PROJECT_NAME% down -v || echo "Failed to stop containers"
+                        echo [INFO] Cleaning up test containers...
+                        docker compose -p %COMPOSE_PROJECT_NAME% down -v || echo "Failed to stop test containers"
                         '''
-                    }
-                }
-            }
-            }
-            post {
-                always {
-                    // Publish JUnit test results
-                    junit 'test-results/junit.xml'
-                    
-                    // Publish HTML coverage report if it exists
-                    script {
-                        if (fileExists('test-results/coverage.xml')) {
-                            publishHTML([
-                                allowMissing: true,
-                                alwaysLinkToLastBuild: true,
-                                keepAll: true,
-                                reportDir: 'test-results/htmlcov',
-                                reportFiles: 'index.html',
-                                reportName: 'Coverage Report'
-                            ])
-                            archiveArtifacts artifacts: 'test-results/coverage.xml', allowEmptyArchive: true
-                        }
                     }
                 }
             }
@@ -208,123 +186,83 @@ pipeline {
 
         stage('Start Integration Stack') {
             steps {
-                bat '''
-                @echo off
-                setlocal enabledelayedexpansion
-                
-                echo [INFO] Starting all services...
-                docker compose -p %COMPOSE_PROJECT_NAME% up -d --wait
-                
-                echo [INFO] Waiting for services to be healthy...
-                set MAX_RETRIES=30
-                set RETRY_DELAY=5
-                set COUNT=0
-                
-                :health_check_loop
-                set ALL_HEALTHY=1
-                
-                :: Check Django health
-                curl --max-time 5 --silent --fail http://localhost:8000/api/health/ >nul 2>&1
-                if !ERRORLEVEL! NEQ 0 (
-                    echo [INFO] Django is not ready yet
-                    set ALL_HEALTHY=0
-                )
-                
-                :: Check MinIO health
-                curl --max-time 5 --silent --fail http://localhost:9000/minio/health/live >nul 2>&1
-                if !ERRORLEVEL! NEQ 0 (
-                    echo [INFO] MinIO is not ready yet
-                    set ALL_HEALTHY=0
-                )
-                
-                if !ALL_HEALTHY! EQU 1 (
-                    echo [INFO] All services are healthy
-                    exit /b 0
-                )
-                
-                set /a COUNT+=1
-                echo [INFO] Waiting for services to be ready... (!COUNT! of %MAX_RETRIES%)
-                
-                if !COUNT! GEQ %MAX_RETRIES% (
-                    echo [ERROR] Services failed to start in time
-                    echo [ERROR] Current status:
-                    docker compose -p %COMPOSE_PROJECT_NAME% ps
-                    echo [ERROR] Logs:
-                    docker compose -p %COMPOSE_PROJECT_NAME% logs --tail=50
-                    exit /b 1
-                )
-                
-                timeout /t %RETRY_DELAY% >nul
-                goto health_check_loop
-                
-                endlocal
-                '''
+                script {
+                    try {
+                        bat '''
+                        @echo off
+                        setlocal enabledelayedprogress
+                        
+                        echo [INFO] Starting integration stack...
+                        docker compose -p %COMPOSE_PROJECT_NAME% up -d
+                        
+                        echo [INFO] Waiting for services to be ready...
+                        timeout /t 30 /nobreak >nul
+                        
+                        echo [INFO] Current running containers:
+                        docker ps --format "table {{.Names}}\t{{.Status}}"
+                        
+                        endlocal
+                        '''
+                    } catch (Exception e) {
+                        echo "[ERROR] Failed to start integration stack: ${e.message}"
+                        currentBuild.result = 'FAILURE'
+                        throw e
+                    }
+                }
             }
         }
 
         stage('Selenium Tests') {
             steps {
-                bat """
-                @echo off
-                setlocal
-                
-                echo [INFO] Setting up Python virtual environment...
-                python -m venv "%VENV%"
-                call "%VENV%\\Scripts\\activate"
-                
-                echo [INFO] Installing test dependencies...
-                python -m pip install --upgrade pip
-                if not exist "tests\\selenium\\requirements.txt" (
-                    echo [ERROR] Selenium requirements file not found
-                    exit /b 1
-                )
-                pip install -r tests\\selenium\\requirements.txt
-                
-                echo [INFO] Running Selenium tests...
-                pytest tests\\selenium --base-url=http://localhost:8000 --maxfail=1 --disable-warnings
-                set TEST_RESULT=!ERRORLEVEL!
-                
-                echo [INFO] Selenium tests completed with exit code !TEST_RESULT!
-                exit /b !TEST_RESULT!
-                """
+                script {
+                    bat '''
+                    @echo off
+                    setlocal
+                    
+                    echo [INFO] Setting up Python virtual environment...
+                    python -m venv "%VENV%"
+                    call "%VENV%\\Scripts\\activate"
+                    
+                    echo [INFO] Installing test dependencies...
+                    python -m pip install --upgrade pip
+                    if not exist "tests\\selenium\\requirements.txt" (
+                        echo [ERROR] Selenium requirements file not found
+                        exit /b 1
+                    )
+                    pip install -r tests\\selenium\\requirements.txt
+                    
+                    echo [INFO] Running Selenium tests...
+                    pytest tests\\selenium --base-url=http://localhost:8000 --maxfail=1 --disable-warnings
+                    set TEST_RESULT=!ERRORLEVEL!
+                    
+                    echo [INFO] Selenium tests completed with exit code !TEST_RESULT!
+                    exit /b !TEST_RESULT!
+                    '''
+                }
             }
         }
     }
 
-    post {
-        always {
-            script {
-                echo 'Cleaning up...'
-                bat '''
-                @echo off
-                setlocal enabledelayedexpansion
-                
-                echo [INFO] Stopping and removing containers...
-                docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "Failed to stop containers"
-                echo [INFO] Removing any remaining containers...
-                for /f "tokens=*" %%i in ('docker ps -aq --filter name=^/%COMPOSE_PROJECT_NAME%_') do (
-                    echo [INFO] Removing container: %%i
-                    docker rm -f %%i || echo "Failed to remove container: %%i"
-                )
-                echo [INFO] Removing virtual environment...
-                if exist "%VENV%" rmdir /s /q "%VENV%"
-                
-                echo [INFO] Cleanup complete
-                endlocal
-                '''
-                
-                // Archive test results if they exist
-                junit '**/test-results/*.xml'
-                
-                // Clean workspace
-                cleanWs()
-            }
-        }
-    }
     
     post {
         always {
             script {
+                // Publish test results if they exist
+                junit 'test-results/junit.xml'
+                
+                // Publish HTML coverage report if it exists
+                if (fileExists('test-results/coverage.xml')) {
+                    publishHTML([
+                        allowMissing: true,
+                        alwaysLinkToLastBuild: true,
+                        keepAll: true,
+                        reportDir: 'test-results/htmlcov',
+                        reportFiles: 'index.html',
+                        reportName: 'Coverage Report'
+                    ])
+                }
+                
+                // Cleanup containers
                 bat '''
                 @echo off
                 setlocal enabledelayedexpansion
@@ -344,9 +282,6 @@ pipeline {
                 echo [INFO] Cleanup complete
                 endlocal
                 '''
-                
-                // Archive test results if they exist
-                junit '**/test-results/*.xml'
                 
                 // Clean workspace
                 cleanWs()
