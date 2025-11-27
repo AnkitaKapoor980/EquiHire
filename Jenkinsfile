@@ -321,4 +321,36 @@ pipeline {
             }
         }
     }
+    
+    post {
+        always {
+            script {
+                bat '''
+                @echo off
+                setlocal enabledelayedexpansion
+                
+                echo [INFO] Stopping and removing containers...
+                docker compose -p %COMPOSE_PROJECT_NAME% down -v --remove-orphans || echo "Failed to stop containers"
+                
+                echo [INFO] Removing any remaining containers...
+                for /f "tokens=*" %%i in ('docker ps -aq --filter name=^/%COMPOSE_PROJECT_NAME%_') do (
+                    echo [INFO] Removing container: %%i
+                    docker rm -f %%i || echo "Failed to remove container: %%i"
+                )
+                
+                echo [INFO] Removing virtual environment...
+                if exist "%VENV%" rmdir /s /q "%VENV%"
+                
+                echo [INFO] Cleanup complete
+                endlocal
+                '''
+                
+                // Archive test results if they exist
+                junit '**/test-results/*.xml'
+                
+                // Clean workspace
+                cleanWs()
+            }
+        }
+    }
 }
