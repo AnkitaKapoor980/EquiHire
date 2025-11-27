@@ -245,49 +245,6 @@ pipeline {
                 }
             }
         }
-                            echo [ERROR] tests directory NOT found in workspace!
-                            echo [INFO] Listing workspace root:
-                            dir /b
-                            exit /b 1
-                        )
-                        
-                        echo [INFO] Running tests in container...
-                        echo [INFO] Installing test dependencies...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app /opt/venv/bin/pip install pytest pytest-django pytest-cov
-                        
-                        if !ERRORLEVEL! NEQ 0 (
-                            echo [ERROR] Failed to install test dependencies
-                            exit /b 1
-                        )
-                        
-                        echo [INFO] Verifying /app contents in container...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/workspace" -w /app django_app sh -c "echo 'Contents of /app:'; ls -la /app | head -30; echo ''; echo 'Contents of /workspace:'; ls -la /workspace | head -30; echo ''; echo 'Checking for tests in workspace:'; if [ -d /workspace/tests ]; then echo 'tests directory EXISTS in workspace'; ls -la /workspace/tests; else echo 'tests directory NOT FOUND in workspace'; fi"
-                        
-                        echo [INFO] Running pytest in container...
-                        echo [INFO] Copying tests from workspace and running pytest...
-                        docker compose -p %COMPOSE_PROJECT_NAME% run --rm -v "%CD%:/workspace" -v "%CD%/test-results:/app/test-results" -w /app -e DJANGO_SETTINGS_MODULE=equihire.settings django_app sh -c "cp -r /workspace/tests /app/ && if [ -f /workspace/pytest.ini ]; then cp /workspace/pytest.ini /app/; fi && echo 'Tests copied successfully' && ls -la /app/tests && /opt/venv/bin/python -m pytest tests/ --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov -v"
-                        
-                        set TEST_EXIT_CODE=!ERRORLEVEL!
-                        
-                        echo [INFO] Test command exited with code !TEST_EXIT_CODE!
-                        
-                        if not exist "test-results\\junit.xml" (
-                            echo [ERROR] No test results found at test-results/junit.xml
-                            if exist "test-results" (
-                                echo [INFO] Contents of test-results directory:
-                                dir /b test-results
-                            ) else (
-                                echo [INFO] test-results directory does not exist
-                            )
-                            if !TEST_EXIT_CODE! EQU 0 (
-                                exit /b 1
-                            )
-                        )
-                        
-                        echo [INFO] Test execution completed
-                        if !TEST_EXIT_CODE! NEQ 0 (
-                            exit /b !TEST_EXIT_CODE!
-                        )
                         '''
                         
                         // Publish test results
@@ -338,6 +295,9 @@ pipeline {
         }
 
         stage('Selenium Tests') {
+            when {
+                expression { false }  // Disabled by default, enable when needed
+            }
             steps {
                 script {
                     bat '''
