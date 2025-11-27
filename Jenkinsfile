@@ -96,19 +96,21 @@ pipeline {
                     setlocal enabledelayedexpansion
                     
                     echo [INFO] Building Docker images with BuildKit cache...
-                    echo [INFO] Using consistent image names for better caching...
+                    echo [INFO] Docker will automatically use cached layers if available...
                     
-                    :: Build with BuildKit for better caching, parallel builds, and no unnecessary pulls
-                    :: Use consistent image names by building without project prefix first, then tag
+                    :: Enable BuildKit for better caching
                     set DOCKER_BUILDKIT=1
                     set COMPOSE_DOCKER_CLI_BUILD=1
                     
                     echo [INFO] Building images (will use cache if available)...
-                    docker compose build --parallel --pull never --progress=plain
+                    echo [INFO] This will be fast if layers are cached, slow only on first build...
+                    
+                    :: Build with project prefix - Docker will use cache automatically
+                    docker compose -p %COMPOSE_PROJECT_NAME% --progress plain build --parallel
                     
                     if !ERRORLEVEL! NEQ 0 (
-                        echo [WARNING] Parallel build failed, trying sequential...
-                        docker compose build --pull never
+                        echo [WARNING] Parallel build failed, trying sequential build...
+                        docker compose -p %COMPOSE_PROJECT_NAME% --progress plain build
                     )
                     
                     if !ERRORLEVEL! NEQ 0 (
@@ -295,7 +297,11 @@ pipeline {
         always {
             script {
                 // Publish test results if they exist
-                junit 'test-results/junit.xml'
+                if (fileExists('test-results/junit.xml')) {
+                    junit 'test-results/junit.xml'
+                } else {
+                    echo "No test results found, skipping junit report"
+                }
                 
                 // Publish HTML coverage report if it exists
                 if (fileExists('test-results/coverage.xml')) {
