@@ -94,110 +94,88 @@ pipeline {
 
         stage('Run Django Unit Tests') {
             steps {
-                bat '''
-                @echo off
-                setlocal enabledelayedexpansion
-                
-                echo [INFO] Starting database and running migrations...
-                
-                :: Start services with health checks using custom ports to avoid conflicts
-                echo [INFO] Starting services with custom ports...
-                docker compose -p %COMPOSE_PROJECT_NAME% -f docker-compose.yaml up -d --wait postgres minio
-                
-                :: Check if postgres container is running
-                echo [INFO] Checking if PostgreSQL container is running...
-                docker compose -p %COMPOSE_PROJECT_NAME% ps --services --filter "status=running" | findstr /c:"postgres" >nul
-                if !ERRORLEVEL! NEQ 0 (
-                    echo [ERROR] PostgreSQL container failed to start
-                    docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
+                script {
+                    bat """
+                    @echo off
+                    setlocal enabledelayedexpansion
                     
-                    echo [INFO] Checking for port conflicts...
-                    netstat -ano | findstr ":5432"
+                    echo [INFO] Starting database and running migrations...
                     
-                    echo [INFO] Trying to start PostgreSQL with force-recreate...
-                    docker compose -p %COMPOSE_PROJECT_NAME% up -d --force-recreate --wait postgres
+                    :: Start services with health checks using custom ports to avoid conflicts
+                    echo [INFO] Starting services with custom ports...
+                    docker compose -p %COMPOSE_PROJECT_NAME% -f docker-compose.yaml up -d --wait postgres minio
                     
+                    :: Check if postgres container is running
+                    echo [INFO] Checking if PostgreSQL container is running...
                     docker compose -p %COMPOSE_PROJECT_NAME% ps --services --filter "status=running" | findstr /c:"postgres" >nul
                     if !ERRORLEVEL! NEQ 0 (
-                        echo [ERROR] PostgreSQL still not running after retry
+                        echo [ERROR] PostgreSQL container failed to start
+                        docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
                         exit /b 1
                     )
-                )
-                
-                :: Wait for PostgreSQL to be ready with retries
-                set MAX_RETRIES=30
-                set RETRY_DELAY=5
-                set COUNT=0
-                
-                :check_postgres
-                docker compose -p %COMPOSE_PROJECT_NAME% exec -T postgres pg_isready -U admin -h localhost -p 5432 -d equihire
-                if !ERRORLEVEL! EQU 0 (
-                    echo [INFO] PostgreSQL is ready
-                    goto db_ready
-                )
-                
-                set /a COUNT+=1
-                if !COUNT! GTR %MAX_RETRIES% (
-                    echo [ERROR] PostgreSQL failed to start in time
-                    docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
-                    exit /b 1
-                )
-                
-                echo [INFO] Waiting for PostgreSQL to be ready... (!COUNT! of %MAX_RETRIES%)
-                ping -n %RETRY_DELAY% 127.0.0.1 >nul
-                goto check_postgres
-                
-                :db_ready
-                echo [INFO] Initializing database with pgvector extension...
-                docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py init_db
-                
-                echo [INFO] Running migrations...
-                docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py migrate
-                
-                echo [INFO] Creating test-results directory...
-                if not exist "test-results" mkdir test-results
-                
-                echo [INFO] Installing test dependencies and running tests...
-                
-                bat """
-                @echo off
-                setlocal
-                
-                echo [INFO] Current directory: %CD%
-                dir "%CD%/backend/django_app"
-                
-                if not exist "test-results" mkdir test-results
-                
-                echo [INFO] Running tests in container...
-                
-                :: Check if tests directory exists
-                if not exist "tests" (
-                    echo [ERROR] Tests directory not found at %CD%\tests
-                    exit /b 1
-                )
-                
-                :: Create test-results directory if it doesn't exist
-                if not exist "test-results" mkdir test-results
-                
-                :: Run tests in container
-                docker compose -p %COMPOSE_PROJECT_NAME% run --rm ^
-                    -v "%CD%:/app" ^
-                    -v "%CD%/test-results:/app/test-results" ^
-                    -w /app ^
-                    django_app ^
-                    sh -c "^"^
-                        echo '=== Current directory in container:' ^&^& pwd ^&^& ^
-                        echo '=== Files in current directory:' ^&^& ls -la ^&^& ^
-                        echo '=== Installing requirements...' ^&^& ^
-                        pip install -r requirements.txt ^&^& ^
-                        echo '=== Installing test dependencies...' ^&^& ^
-                        pip install pytest pytest-django pytest-cov ^&^& ^
-                        echo '=== Running tests...' ^&^& ^
-                        python -m pytest /app/tests --junitxml=/app/test-results/junit.xml --cov=. --cov-report=xml:/app/test-results/coverage.xml --cov-report=html:/app/test-results/htmlcov
+                    
+                    :: Wait for PostgreSQL to be ready with retries
+                    set MAX_RETRIES=30
+                    set RETRY_DELAY=5
+                    set COUNT=0
+                    
+                    :check_postgres
+                    docker compose -p %COMPOSE_PROJECT_NAME% exec -T postgres pg_isready -U admin -h localhost -p 5432 -d equihire
+                    if !ERRORLEVEL! EQU 0 (
+                        echo [INFO] PostgreSQL is ready
+                        goto db_ready
+                    )
+                    
+                    set /a COUNT+=1
+                    if !COUNT! GTR %MAX_RETRIES% (
+                        echo [ERROR] PostgreSQL failed to start in time
+                        docker compose -p %COMPOSE_PROJECT_NAME% logs postgres
+                        exit /b 1
+                    )
+                    
+                    echo [INFO] Waiting for PostgreSQL to be ready... (!COUNT! of %MAX_RETRIES%)
+                    ping -n %RETRY_DELAY% 127.0.0.1 >nul
+                    goto check_postgres
+                    
+                    :db_ready
+                    echo [INFO] Initializing database with pgvector extension...
+                    docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py init_db
+                    
+                    echo [INFO] Running migrations...
+                    docker compose -p %COMPOSE_PROJECT_NAME% run --rm django_app python manage.py migrate
+                    
+                    echo [INFO] Creating test-results directory...
+                    if not exist "test-results" mkdir test-results
+                    
+                    echo [INFO] Running tests in container...
+                    
+                    docker compose -p %COMPOSE_PROJECT_NAME% run --rm ^
+                        -v "%CD%:/app" ^
+                        -v "%CD%/test-results:/app/test-results" ^
+                        -w /app/backend/django_app ^
+                        django_app ^
+                        sh -c "^"^
+                            echo '=== Current directory in container:' ^&^& pwd ^&^& ^
+                            echo '=== Files in current directory:' ^&^& ls -la ^&^& ^
+                            echo '=== Installing test dependencies...' ^&^& ^
+                            pip install pytest pytest-django pytest-cov ^&^& ^
+                            echo '=== Running tests...' ^&^& ^
+                            python -m pytest /app/backend/django_app/tests ^
+                                --junitxml=/app/test-results/junit.xml ^
+                                --cov=. ^
+                                --cov-report=xml:/app/test-results/coverage.xml ^
+                                --cov-report=html:/app/test-results/htmlcov
+                            
+                    if not exist "test-results\\junit.xml" (
+                        echo [ERROR] No test results found at test-results/junit.xml
+                        dir /s /b test-results
+                        exit /b 1
+                    ) else (
+                        echo [INFO] Test results generated successfully
+                    )
                     """
-                
-                if not exist "test-results\\junit.xml" (
-                    echo [WARNING] No test results found at test-results/junit.xml
+                }
+            }
                 ) else (
                     echo [INFO] Test results found at test-results/junit.xml
                 )
